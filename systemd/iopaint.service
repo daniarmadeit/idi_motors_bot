@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/rus_bot
-Environment="PATH=/home/YOUR_USERNAME/rus_bot/venv/bin"
-ExecStart=/home/YOUR_USERNAME/rus_bot/venv/bin/iopaint start --model=lama --device=cpu --port=8085 --host=127.0.0.1
+User=root
+WorkingDirectory=/root/projects/idi_motors_bot
+Environment="PATH=/root/projects/idi_motors_bot/venv/bin"
+ExecStart=/root/projects/idi_motors_bot/venv/bin/iopaint start --model=lama --device=cpu --port=8085 --host=127.0.0.1
 Restart=always
 RestartSec=10
 

@@ -5,11 +5,11 @@ Requires=iopaint.service
 
 [Service]
 Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/rus_bot
-Environment="PATH=/home/YOUR_USERNAME/rus_bot/venv/bin"
-EnvironmentFile=/home/YOUR_USERNAME/rus_bot/.env
-ExecStart=/home/YOUR_USERNAME/rus_bot/venv/bin/python rus_bot.py
+User=root
+WorkingDirectory=/root/projects/idi_motors_bot
+Environment="PATH=/root/projects/idi_motors_bot/venv/bin"
+EnvironmentFile=/root/projects/idi_motors_bot/.env
+ExecStart=/root/projects/idi_motors_bot/venv/bin/python rus_bot.py
 Restart=always
 RestartSec=10
 
