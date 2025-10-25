@@ -1,0 +1,25 @@
+[Unit]
+Description=BeForward Parser Telegram Bot
+After=network.target iopaint.service
+Requires=iopaint.service
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/home/YOUR_USERNAME/rus_bot
+Environment="PATH=/home/YOUR_USERNAME/rus_bot/venv/bin"
+EnvironmentFile=/home/YOUR_USERNAME/rus_bot/.env
+ExecStart=/home/YOUR_USERNAME/rus_bot/venv/bin/python rus_bot.py
+Restart=always
+RestartSec=10
+
+# Логирование
+StandardOutput=append:/var/log/rusbot.log
+StandardError=append:/var/log/rusbot-error.log
+
+# Безопасность
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -41,3 +41,18 @@ cleaned_photos/
 Thumbs.db
 desktop.ini
 
+# Deployment (systemd service files содержат пути - не игнорируем)
+*.pid
+
+# Secrets and sensitive data
+*.pem
+*.key
+*.cert
+credentials.json
+secrets/
+
+# Database (if added in future)
+*.db
+*.sqlite
+*.sqlite3
+

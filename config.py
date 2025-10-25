@@ -19,7 +19,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 # ============================================================================
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_MODEL = "gpt-5-nano"
-OPENAI_TIMEOUT = 30  # секунд
+OPENAI_TIMEOUT = 60  # секунд (увеличен из-за медленной сети и reasoning tokens)
 
 
 # ============================================================================
@@ -123,9 +123,21 @@ Why Choose IDI MOTORS?
 IMPORTANT:
 - Write in English
 - Use emojis for visual appeal
-- Make price stand out
+- Make price stand out with Unicode bold characters (𝗕𝗢𝗟𝗗 style)
+- Use Unicode bold for key phrases like: vehicle name, PRICE, IDI MOTORS, key benefits
 - Include contact number +260970100101
 - Mention IDI MOTORS
 - Emphasize Japan to Africa shipping reliability
 - Add relevant hashtags for Zambia/Lusaka/Africa
-- Keep it professional but bold and persuasive"""
+- Keep it professional but bold and persuasive
+
+UNICODE BOLD FORMAT:
+Use Unicode Mathematical Bold characters for emphasis:
+- Normal: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
+- Bold: 𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵
+
+Apply Unicode bold to:
+- Vehicle name in title (e.g., 𝟮𝟬𝟭𝟮 𝗧𝗢𝗬𝗢𝗧𝗔 𝗖𝗔𝗠𝗥𝗬 𝗛𝗬𝗕𝗥𝗜𝗗 𝗫𝗟𝗘)
+- PRICE label and amount (e.g., 💰 𝗣𝗥𝗜𝗖𝗘: $𝟲,𝟮𝟮𝟲)
+- IDI MOTORS mentions
+- Key selling points and taglines"""
