@@ -35,7 +35,8 @@ apt update && apt upgrade -y
 echo -e "\n${GREEN}[2/8] Установка системных зависимостей...${NC}"
 apt install -y python3 python3-pip python3-venv git curl \
     libjpeg-dev zlib1g-dev libpng-dev libtiff-dev \
-    libfreetype6-dev liblcms2-dev libwebp-dev
+    libfreetype6-dev liblcms2-dev libwebp-dev \
+    libgl1 libglib2.0-0 libgomp1
 
 # 3. Проверка версии Python
 echo -e "\n${GREEN}[3/8] Проверка версии Python...${NC}"
@@ -57,10 +58,15 @@ fi
 
 # 5. Создание виртуального окружения и установка зависимостей
 echo -e "\n${GREEN}[5/8] Настройка Python окружения...${NC}"
-if [ ! -d "venv" ]; then
-    echo "Создание виртуального окружения..."
-    sudo -u $REAL_USER python3 -m venv venv
+
+# Удаляем старое venv если есть проблемы с зависимостями
+if [ -d "venv" ]; then
+    echo "Удаление старого виртуального окружения..."
+    rm -rf venv
 fi
+
+echo "Создание виртуального окружения..."
+sudo -u $REAL_USER python3 -m venv venv
 
 echo "Установка зависимостей..."
 sudo -u $REAL_USER bash -c "source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt"
