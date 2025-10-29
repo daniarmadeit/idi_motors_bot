@@ -1101,9 +1101,7 @@ class TelegramBot:
 
         queue_size = self.url_queue.qsize()
 
-        if queue_size == 1 and not self.is_processing:
-            await update.message.reply_text("✅ Начинаю обработку...")
-        else:
+        if queue_size > 1 or self.is_processing:
             await update.message.reply_text(f"✅ Добавлено в очередь (позиция: {queue_size})")
 
         # Запускаем обработчик очереди, если он не запущен
