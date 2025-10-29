@@ -187,10 +187,18 @@ class BeForwardParser:
             all_rows = modal.select('tr.fn-destination-price-row')
             logger.info(f"📋 Найдено строк: {len(all_rows)}")
 
+            # Выводим первые 3 строки для отладки
+            for idx, row in enumerate(all_rows[:3]):
+                row_text = row.get_text(strip=True)
+                logger.info(f"🔍 Строка #{idx+1}: {row_text[:150]}")
+
             for idx, row in enumerate(all_rows):
                 row_text = row.get_text().upper()
-                if 'DAR ES SALAAM' in row_text and 'RORO' in row_text:
-                    logger.info(f"✅ Найден DAR ES SALAAM RORO в строке #{idx+1}")
+
+                # Ищем DAR ES SALAAM (может быть без RORO в тексте)
+                if 'DAR ES SALAAM' in row_text or 'DARESSALAAM' in row_text.replace(' ', ''):
+                    logger.info(f"✅ Найден DAR ES SALAAM в строке #{idx+1}")
+                    logger.info(f"📄 Текст строки: {row_text[:200]}")
 
                     price_span = row.select_one('span.fn-total-price-display')
                     if price_span:
