@@ -1036,7 +1036,7 @@ class TelegramBot:
         self.token = token
         self.parser = BeForwardParser()
         self.application = None
-        self.url_queue = asyncio.Queue(maxsize=10)  # КРИТИЧНО: Ограничение очереди (защита от DOS)
+        self.url_queue = asyncio.Queue(maxsize=20)  # КРИТИЧНО: Ограничение очереди (защита от DOS)
         self.is_processing = False
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
