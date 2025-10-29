@@ -781,6 +781,16 @@ class BeForwardParser:
             # 1. Скачиваем ZIP
             logger.info(f"📥 Скачиваем фото: {photo_download_url}")
 
+            # Обновляем статус - скачивание фото
+            if progress_message and car_data_text:
+                try:
+                    await progress_message.edit_text(
+                        text=f"{car_data_text}\n\n━━━━━━━━━━━━━━━━━━━━\n📥 Скачивание фото...",
+                        disable_web_page_preview=True
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось обновить статус скачивания: {e}")
+
             # Выполняем синхронный HTTP запрос в executor
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
