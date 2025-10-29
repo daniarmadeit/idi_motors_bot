@@ -1108,15 +1108,8 @@ class TelegramBot:
             )
             return
 
-        # Создаем сообщение со статусом для обновления
-        queue_size = self.url_queue.qsize() + 1  # +1 потому что еще не добавили в очередь
-
-        if queue_size > 1 or self.is_processing:
-            # Если в очереди или уже обрабатываем - показываем позицию
-            status_message = await update.message.reply_text(f"✅ Добавлено в очередь (позиция: {queue_size})")
-        else:
-            # Если первая ссылка - сразу показываем статус парсинга
-            status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
+        # Создаем одно сообщение для всех статусов
+        status_message = await update.message.reply_text("⏳ Обработка...")
 
         # Добавляем в очередь вместе со status_message
         await self.url_queue.put({
@@ -1152,41 +1145,36 @@ class TelegramBot:
                 # Показываем статус "печатает"
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
-                # Обновляем существующее сообщение до "Парсинг данных..."
+                # Парсим данные
+                car_data = self.parser.parse_car_data(url)
+
+                # Форматируем результат
+                result_text = self.parser.format_car_data(car_data)
+
+                # Обновляем сообщение спеками
                 if status_message:
-                    try:
-                        await status_message.edit_text("⏳ Парсинг данных...", parse_mode='Markdown')
-                    except:
-                        # Если не удалось обновить - создаем новое
-                        status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
-                else:
-                    status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
-
-                try:
-                    # Парсим данные
-                    car_data = self.parser.parse_car_data(url)
-
-                    # Форматируем результат
-                    result_text = self.parser.format_car_data(car_data)
-
-                    # ОБНОВЛЯЕМ то же сообщение спеками (вместо создания нового)
                     try:
                         await status_message.edit_text(
                             text=result_text,
                             disable_web_page_preview=True
                         )
                         specs_message = status_message
-                    except:
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не удалось обновить сообщение: {e}")
                         # Если не удалось обновить - создаем новое
                         specs_message = await context.bot.send_message(
                             chat_id=update.effective_chat.id,
                             text=result_text,
                             disable_web_page_preview=True
                         )
-                        try:
-                            await status_message.delete()
-                        except:
-                            pass
+                else:
+                    specs_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=result_text,
+                        disable_web_page_preview=True
+                    )
+
+                try:
 
                     # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (после отправки спеков)
                     cleaned_zip = None
