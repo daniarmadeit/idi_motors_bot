@@ -818,8 +818,8 @@ class BeForwardParser:
             )
 
             for idx, image_path in enumerate(image_files_limited):
-                # Обновляем прогресс-бар в сообщении
-                if progress_message:
+                # Обновляем прогресс-бар в сообщении (добавляем к спекам)
+                if progress_message and car_data_text:
                     try:
                         # Создаём визуальный прогресс-бар
                         progress_percent = int((idx / len(image_files_limited)) * 100)
@@ -827,13 +827,15 @@ class BeForwardParser:
                         empty = 20 - filled
                         progress_bar = "█" * filled + "░" * empty
 
+                        # Добавляем прогресс к спекам
                         progress_text = (
-                            f"🎨 Обработка фото: {idx + 1}/{len(image_files_limited)}\n\n"
-                            f"[{progress_bar}] {progress_percent}%\n\n"
-                            f"⏳ Удаление водяных знаков + AI Upscaling..."
+                            f"{car_data_text}\n\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🎨 Обработка фото: {idx + 1}/{len(image_files_limited)}\n"
+                            f"[{progress_bar}] {progress_percent}%"
                         )
 
-                        await progress_message.edit_text(progress_text)
+                        await progress_message.edit_text(progress_text, disable_web_page_preview=True)
                         logger.info(f"✉️ Обновлён прогресс: {idx + 1}/{len(image_files_limited)}")
                     except Exception as e:
                         logger.warning(f"⚠️ Не удалось обновить прогресс: {e}")
@@ -861,14 +863,16 @@ class BeForwardParser:
 
             logger.info("✅ IOPaint обработка завершена")
 
-            # Обновляем прогресс на 100%
-            if progress_message:
+            # Обновляем прогресс на 100% (добавляем к спекам)
+            if progress_message and car_data_text:
                 try:
-                    await progress_message.edit_text(
-                        f"✅ Обработка завершена!\n\n"
-                        f"[████████████████████] 100%\n\n"
-                        f"📦 Создаём ZIP архив..."
+                    progress_text = (
+                        f"{car_data_text}\n\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"✅ Обработка завершена!\n"
+                        f"[████████████████████] 100%"
                     )
+                    await progress_message.edit_text(progress_text, disable_web_page_preview=True)
                 except Exception as e:
                     logger.warning(f"⚠️ Не удалось обновить финальный прогресс: {e}")
 
@@ -1128,7 +1132,7 @@ class TelegramBot:
                     result_text = self.parser.format_car_data(car_data)
 
                     # СРАЗУ ОТПРАВЛЯЕМ СПЕКИ (до обработки фото)
-                    await context.bot.send_message(
+                    specs_message = await context.bot.send_message(
                         chat_id=update.effective_chat.id,
                         text=result_text,
                         disable_web_page_preview=True
@@ -1143,16 +1147,12 @@ class TelegramBot:
                     # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (после отправки спеков)
                     cleaned_zip = None
                     cleaned_photos_paths = None
-                    progress_message = None
 
                     if car_data.get('photo_download_url') and car_data['photo_download_url'] != "COLLECT_PHOTOS":
                         logger.info(f"🎨 Начинаем очистку фото: {car_data['photo_download_url']}")
 
-                        # Создаём новое сообщение с прогрессом
-                        progress_message = await context.bot.send_message(
-                            chat_id=update.effective_chat.id,
-                            text="🎨 Очистка фото от водяных знаков...\n\n[░░░░░░░░░░░░░░░░░░░░] 0%"
-                        )
+                        # Используем сообщение со спеками для прогресса
+                        progress_message = specs_message
 
                         photo_url = car_data['photo_download_url']
                         result = await self.parser.download_and_process_photos(
@@ -1227,20 +1227,18 @@ class TelegramBot:
                         except Exception as e:
                             logger.error(f"❌ Ошибка отправки превью: {e}")
 
-                    # Отправляем кнопку скачивания если есть
+                    # Добавляем кнопку скачивания К СООБЩЕНИЮ СО СПЕКАМИ
                     if reply_markup:
-                        await context.bot.send_message(
-                            chat_id=update.effective_chat.id,
-                            text=".",  # Минимальный текст (точка)
-                            reply_markup=reply_markup
-                        )
-
-                    # Удаляем сообщение прогресса если оно было создано
-                    if progress_message:
                         try:
-                            await progress_message.delete()
-                        except:
-                            pass
+                            # Редактируем сообщение со спеками - убираем прогресс и добавляем кнопку
+                            await specs_message.edit_text(
+                                text=result_text,
+                                reply_markup=reply_markup,
+                                disable_web_page_preview=True
+                            )
+                            logger.info("✅ Кнопка добавлена к сообщению со спеками")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось добавить кнопку к спекам: {e}")
 
                 except Exception as e:
                     logger.error(f"Ошибка обработки URL: {e}")
