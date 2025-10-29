@@ -976,12 +976,41 @@ class TelegramBot:
                             temp_dir = os.path.dirname(os.path.dirname(cleaned_photos_paths[0]))
                             context.user_data[f"temp_dir_{update.message.message_id}"] = temp_dir
 
-                    # Отправляем результат
+                    # Отправляем результат (спеки)
                     await context.bot.send_message(
                         chat_id=update.effective_chat.id,
                         text=result_text,
-                        reply_markup=reply_markup,
                         disable_web_page_preview=True
+                    )
+
+                    # Отправляем ПРЕВЬЮ (первые 3 фото) если они есть
+                    if cleaned_photos_paths and len(cleaned_photos_paths) > 0:
+                        try:
+                            preview_count = min(3, len(cleaned_photos_paths))
+                            logger.info(f"📸 Отправка превью ({preview_count} фото)...")
+
+                            media_group = []
+                            for idx in range(preview_count):
+                                photo_path = cleaned_photos_paths[idx]
+                                if os.path.exists(photo_path):
+                                    with open(photo_path, 'rb') as photo_file:
+                                        photo_bytes = photo_file.read()
+                                        media_group.append(InputMediaPhoto(media=photo_bytes))
+
+                            if media_group:
+                                await context.bot.send_media_group(
+                                    chat_id=update.effective_chat.id,
+                                    media=media_group
+                                )
+                                logger.info(f"✅ Превью отправлено ({len(media_group)} фото)")
+                        except Exception as e:
+                            logger.error(f"❌ Ошибка отправки превью: {e}")
+
+                    # Отправляем кнопки отдельным сообщением
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text="📥 Доступные действия:",
+                        reply_markup=reply_markup
                     )
 
                     # Удаляем статусное сообщение
