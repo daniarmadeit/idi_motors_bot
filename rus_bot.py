@@ -1171,39 +1171,6 @@ class TelegramBot:
                     else:
                         logger.warning(f"⚠️ Очистка пропущена. photo_download_url={car_data.get('photo_download_url')}")
 
-                    # Создаем кнопку скачивания фото (только одна кнопка)
-                    keyboard = []
-
-                    # Показываем кнопку ТОЛЬКО если фото успешно очищены
-                    if cleaned_zip and cleaned_photos_paths:
-                        keyboard.append([InlineKeyboardButton("📷 Скачать фото", callback_data=f"download_ready_photos_{update.message.message_id}")])
-                    elif car_data.get('photo_download_url') == "COLLECT_PHOTOS":
-                        # Вторая версия - собираем фото через бота (без очистки)
-                        keyboard.append([InlineKeyboardButton("📷 Скачать все фото", callback_data=f"download_photos_{update.message.message_id}")])
-
-                    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-
-                    # Сохраняем данные для скачивания и генерации описания
-                    context.user_data[f"car_data_{update.message.message_id}"] = result_text
-                    context.user_data[f"car_full_data_{update.message.message_id}"] = car_data
-
-                    # КРИТИЧНО: Сохраняем timestamp для TTL (автоочистка через 1 час)
-                    context.user_data[f"timestamp_{update.message.message_id}"] = time.time()
-
-                    # Сохраняем фото URLs если есть (вторая версия)
-                    if car_data.get('photo_urls'):
-                        context.user_data[f"photo_data_{update.message.message_id}"] = car_data['photo_urls']
-
-                    # Сохраняем ОЧИЩЕННЫЕ фото если есть
-                    if cleaned_zip and cleaned_photos_paths:
-                        context.user_data[f"cleaned_zip_{update.message.message_id}"] = cleaned_zip
-                        context.user_data[f"cleaned_photos_{update.message.message_id}"] = cleaned_photos_paths
-
-                        # Сохраняем путь к временной директории для очистки
-                        if cleaned_photos_paths:
-                            temp_dir = os.path.dirname(os.path.dirname(cleaned_photos_paths[0]))
-                            context.user_data[f"temp_dir_{update.message.message_id}"] = temp_dir
-
                     # Отправляем ПРЕВЬЮ (первые 3 фото) если они есть
                     if cleaned_photos_paths and len(cleaned_photos_paths) > 0:
                         try:
@@ -1227,18 +1194,59 @@ class TelegramBot:
                         except Exception as e:
                             logger.error(f"❌ Ошибка отправки превью: {e}")
 
-                    # Добавляем кнопку скачивания К СООБЩЕНИЮ СО СПЕКАМИ
-                    if reply_markup:
+                    # СРАЗУ отправляем ZIP архив (без кнопки)
+                    if cleaned_zip and cleaned_photos_paths:
                         try:
-                            # Редактируем сообщение со спеками - убираем прогресс и добавляем кнопку
+                            # Обновляем статус в сообщении со спеками
                             await specs_message.edit_text(
-                                text=result_text,
-                                reply_markup=reply_markup,
+                                text=f"{result_text}\n\n━━━━━━━━━━━━━━━━━━━━\n📦 Отправка архива...",
                                 disable_web_page_preview=True
                             )
-                            logger.info("✅ Кнопка добавлена к сообщению со спеками")
+
+                            # Получаем название машины для filename и caption
+                            car_name = car_data.get('car_name', 'cleaned_photos')
+                            # Очищаем от спецсимволов
+                            safe_car_name = car_name.replace('/', '_').replace('\\', '_').replace(':', '_')
+
+                            # Отправляем ZIP архив
+                            await context.bot.send_document(
+                                chat_id=update.effective_chat.id,
+                                document=io.BytesIO(cleaned_zip),
+                                filename=f"{safe_car_name}.zip",
+                                caption=f"🚗 {car_name}"
+                            )
+                            logger.info("✅ ZIP архив отправлен")
+
+                            # Обновляем статус - архив отправлен
+                            await specs_message.edit_text(
+                                text=f"{result_text}\n\n━━━━━━━━━━━━━━━━━━━━\n✅ Архив отправлен!",
+                                disable_web_page_preview=True
+                            )
+
+                            # Очищаем временную директорию
+                            if cleaned_photos_paths:
+                                temp_dir = os.path.dirname(os.path.dirname(cleaned_photos_paths[0]))
+                                try:
+                                    shutil.rmtree(temp_dir)
+                                    logger.info(f"🗑️ Удалена временная директория: {temp_dir}")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Не удалось удалить temp_dir: {e}")
+
                         except Exception as e:
-                            logger.warning(f"⚠️ Не удалось добавить кнопку к спекам: {e}")
+                            logger.error(f"❌ Ошибка отправки ZIP: {e}")
+                            await specs_message.edit_text(
+                                text=f"{result_text}\n\n━━━━━━━━━━━━━━━━━━━━\n❌ Ошибка отправки архива",
+                                disable_web_page_preview=True
+                            )
+                    else:
+                        # Убираем прогресс-бар из спеков если фото не обработаны
+                        try:
+                            await specs_message.edit_text(
+                                text=result_text,
+                                disable_web_page_preview=True
+                            )
+                        except:
+                            pass
 
                 except Exception as e:
                     logger.error(f"Ошибка обработки URL: {e}")
