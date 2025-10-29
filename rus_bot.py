@@ -1012,11 +1012,11 @@ class TelegramBot:
                         except Exception as e:
                             logger.error(f"❌ Ошибка отправки превью: {e}")
 
-                    # Отправляем кнопку скачивания если есть (используем невидимый символ)
+                    # Отправляем кнопку скачивания если есть
                     if reply_markup:
                         await context.bot.send_message(
                             chat_id=update.effective_chat.id,
-                            text="‎",  # Невидимый символ (Zero-Width Space)
+                            text=".",  # Минимальный текст (точка)
                             reply_markup=reply_markup
                         )
 
