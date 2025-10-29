@@ -805,18 +805,31 @@ class BeForwardParser:
             # Выполняем синхронный HTTP запрос в executor
             download_start = time.time()
             loop = asyncio.get_event_loop()
+
+            # Используем stream=True для эффективной загрузки больших файлов
             response = await loop.run_in_executor(
                 None,
-                lambda: self.session.get(photo_download_url, timeout=config.PHOTO_DOWNLOAD_TIMEOUT)
+                lambda: self.session.get(photo_download_url, timeout=config.PHOTO_DOWNLOAD_TIMEOUT, stream=True)
             )
             response.raise_for_status()
-            download_time = time.time() - download_start
 
-            file_size_mb = len(response.content) / (1024 * 1024)
+            # Скачиваем контент чанками
+            content_chunks = []
+            chunk_start = time.time()
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    content_chunks.append(chunk)
+            content = b''.join(content_chunks)
+
+            download_time = time.time() - download_start
+            chunk_time = time.time() - chunk_start
+
+            file_size_mb = len(content) / (1024 * 1024)
             logger.info(f"⏱️ Скачано {file_size_mb:.2f} MB за {download_time:.1f} сек ({file_size_mb/download_time:.2f} MB/s)")
+            logger.info(f"   └─ Время на чтение контента: {chunk_time:.1f} сек, подключение: {download_time - chunk_time:.1f} сек")
 
             with open(zip_path, 'wb') as f:
-                f.write(response.content)
+                f.write(content)
 
             # 2. Распаковываем
             logger.info("📦 Распаковываем архив...")
