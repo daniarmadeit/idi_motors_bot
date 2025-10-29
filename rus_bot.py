@@ -1108,17 +1108,23 @@ class TelegramBot:
             )
             return
 
-        # Добавляем в очередь
+        # Создаем сообщение со статусом для обновления
+        queue_size = self.url_queue.qsize() + 1  # +1 потому что еще не добавили в очередь
+
+        if queue_size > 1 or self.is_processing:
+            # Если в очереди или уже обрабатываем - показываем позицию
+            status_message = await update.message.reply_text(f"✅ Добавлено в очередь (позиция: {queue_size})")
+        else:
+            # Если первая ссылка - сразу показываем статус парсинга
+            status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
+
+        # Добавляем в очередь вместе со status_message
         await self.url_queue.put({
             'url': url,
             'update': update,
-            'context': context
+            'context': context,
+            'status_message': status_message
         })
-
-        queue_size = self.url_queue.qsize()
-
-        if queue_size > 1 or self.is_processing:
-            await update.message.reply_text(f"✅ Добавлено в очередь (позиция: {queue_size})")
 
         # Запускаем обработчик очереди, если он не запущен
         if not self.is_processing:
@@ -1139,14 +1145,22 @@ class TelegramBot:
                 url = task['url']
                 update = task['update']
                 context = task['context']
+                status_message = task.get('status_message')
 
                 logger.info(f"📋 Обрабатываю URL из очереди: {url}")
 
                 # Показываем статус "печатает"
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
-                # Отправляем сообщение о начале парсинга
-                status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
+                # Обновляем существующее сообщение до "Парсинг данных..."
+                if status_message:
+                    try:
+                        await status_message.edit_text("⏳ Парсинг данных...", parse_mode='Markdown')
+                    except:
+                        # Если не удалось обновить - создаем новое
+                        status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
+                else:
+                    status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
 
                 try:
                     # Парсим данные
@@ -1155,18 +1169,24 @@ class TelegramBot:
                     # Форматируем результат
                     result_text = self.parser.format_car_data(car_data)
 
-                    # СРАЗУ ОТПРАВЛЯЕМ СПЕКИ (до обработки фото)
-                    specs_message = await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=result_text,
-                        disable_web_page_preview=True
-                    )
-
-                    # Удаляем статусное сообщение "Парсинг данных..."
+                    # ОБНОВЛЯЕМ то же сообщение спеками (вместо создания нового)
                     try:
-                        await status_message.delete()
+                        await status_message.edit_text(
+                            text=result_text,
+                            disable_web_page_preview=True
+                        )
+                        specs_message = status_message
                     except:
-                        pass
+                        # Если не удалось обновить - создаем новое
+                        specs_message = await context.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text=result_text,
+                            disable_web_page_preview=True
+                        )
+                        try:
+                            await status_message.delete()
+                        except:
+                            pass
 
                     # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (после отправки спеков)
                     cleaned_zip = None
