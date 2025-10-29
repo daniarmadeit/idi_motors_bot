@@ -1385,20 +1385,32 @@ class TelegramBot:
             message_id = callback_data.split('_')[3]
             cleaned_zip_key = f"cleaned_zip_{message_id}"
             temp_dir_key = f"temp_dir_{message_id}"
+            car_full_data_key = f"car_full_data_{message_id}"
 
             if cleaned_zip_key in context.user_data:
                 cleaned_zip = context.user_data[cleaned_zip_key]
+
+                # Получаем название машины для caption и filename
+                car_name = "cleaned_photos"
+                if car_full_data_key in context.user_data:
+                    car_data = context.user_data[car_full_data_key]
+                    if car_data.get('car_name'):
+                        # Очищаем название от спецсимволов для имени файла
+                        car_name = car_data['car_name'].replace('/', '_').replace('\\', '_').replace(':', '_')
 
                 # СРАЗУ отправляем ZIP архив
                 try:
                     logger.info(f"📦 Отправка ZIP архива ({len(cleaned_zip)} байт)")
 
+                    # Формируем caption с названием машины
+                    caption = f"🚗 {context.user_data.get(car_full_data_key, {}).get('car_name', 'Car')}"
+
                     # Отправляем ZIP как документ
                     await context.bot.send_document(
                         chat_id=query.message.chat_id,
                         document=io.BytesIO(cleaned_zip),
-                        filename="cleaned_photos.zip",
-                        caption=f"📦 Архив с очищенными фото"
+                        filename=f"{car_name}.zip",
+                        caption=caption
                     )
                     logger.info("✅ ZIP архив отправлен")
 
