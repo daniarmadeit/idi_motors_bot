@@ -1158,54 +1158,27 @@ class TelegramBot:
                 # Показываем статус "печатает"
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
-                # Парсим данные
-                car_data = self.parser.parse_car_data(url)
-
-                # Форматируем результат
-                result_text = self.parser.format_car_data(car_data)
-
-                # Обновляем сообщение спеками
-                if status_message:
-                    try:
-                        await status_message.edit_text(
-                            text=result_text,
-                            disable_web_page_preview=True
-                        )
-                        specs_message = status_message
-                    except Exception as e:
-                        logger.warning(f"⚠️ Не удалось обновить сообщение: {e}")
-                        # Если не удалось обновить - создаем новое
-                        specs_message = await context.bot.send_message(
-                            chat_id=update.effective_chat.id,
-                            text=result_text,
-                            disable_web_page_preview=True
-                        )
-                else:
-                    specs_message = await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=result_text,
-                        disable_web_page_preview=True
-                    )
-
                 try:
+                    # Парсим данные
+                    car_data = self.parser.parse_car_data(url)
 
-                    # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (после отправки спеков)
+                    # Форматируем результат
+                    result_text = self.parser.format_car_data(car_data)
+
+                    # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (НЕ показываем спеки до готовности архива)
                     cleaned_zip = None
                     cleaned_photos_paths = None
 
                     if car_data.get('photo_download_url') and car_data['photo_download_url'] != "COLLECT_PHOTOS":
                         logger.info(f"🎨 Начинаем очистку фото: {car_data['photo_download_url']}")
 
-                        # Используем сообщение со спеками для прогресса
-                        progress_message = specs_message
-
                         photo_url = car_data['photo_download_url']
                         result = await self.parser.download_and_process_photos(
                             photo_url,
                             bot=context.bot,
                             chat_id=update.effective_chat.id,
-                            progress_message=progress_message,
-                            car_data_text=result_text
+                            progress_message=None,  # Не обновляем сообщение во время обработки
+                            car_data_text=None
                         )
 
                         if result:
@@ -1216,53 +1189,41 @@ class TelegramBot:
                     else:
                         logger.warning(f"⚠️ Очистка пропущена. photo_download_url={car_data.get('photo_download_url')}")
 
-                    # Отправляем ZIP архив
+                    # КОГДА ВСЁ ГОТОВО: обновляем сообщение спеками и отправляем архив
                     if cleaned_zip and cleaned_photos_paths:
-                        try:
-                            # Обновляем статус в сообщении со спеками
-                            await specs_message.edit_text(
-                                text=f"{result_text}\n\n━━━━━━━━━━━━━━━━━━━━\n📦 Отправка архива...",
-                                disable_web_page_preview=True
-                            )
+                        # Обновляем сообщение со спеками
+                        if status_message:
+                            try:
+                                await status_message.edit_text(
+                                    text=result_text,
+                                    disable_web_page_preview=True
+                                )
+                            except Exception as e:
+                                logger.warning(f"⚠️ Не удалось обновить сообщение: {e}")
 
-                            # Получаем название машины для filename и caption
-                            car_name = car_data.get('car_name', 'cleaned_photos')
-                            # Очищаем от спецсимволов
-                            safe_car_name = car_name.replace('/', '_').replace('\\', '_').replace(':', '_')
+                        # Получаем название машины для filename и caption
+                        car_name = car_data.get('car_name', 'cleaned_photos')
+                        # Очищаем от спецсимволов
+                        safe_car_name = car_name.replace('/', '_').replace('\\', '_').replace(':', '_')
 
-                            # Отправляем ZIP архив
-                            await context.bot.send_document(
-                                chat_id=update.effective_chat.id,
-                                document=io.BytesIO(cleaned_zip),
-                                filename=f"{safe_car_name}.zip",
-                                caption=f"🚗 {car_name}"
-                            )
-                            logger.info("✅ ZIP архив отправлен")
-
-                            # Обновляем статус - архив отправлен
-                            await specs_message.edit_text(
-                                text=f"{result_text}\n\n━━━━━━━━━━━━━━━━━━━━\n✅ Архив отправлен!",
-                                disable_web_page_preview=True
-                            )
-
-                            # Временная директория уже автоматически очищена через TemporaryDirectory().cleanup()
-                            # в функции download_and_process_photos()
-
-                        except Exception as e:
-                            logger.error(f"❌ Ошибка отправки ZIP: {e}")
-                            await specs_message.edit_text(
-                                text=f"{result_text}\n\n━━━━━━━━━━━━━━━━━━━━\n❌ Ошибка отправки архива",
-                                disable_web_page_preview=True
-                            )
+                        # Отправляем ZIP архив
+                        await context.bot.send_document(
+                            chat_id=update.effective_chat.id,
+                            document=io.BytesIO(cleaned_zip),
+                            filename=f"{safe_car_name}.zip",
+                            caption=f"🚗 {car_name}"
+                        )
+                        logger.info("✅ ZIP архив отправлен")
                     else:
-                        # Убираем прогресс-бар из спеков если фото не обработаны
-                        try:
-                            await specs_message.edit_text(
-                                text=result_text,
-                                disable_web_page_preview=True
-                            )
-                        except:
-                            pass
+                        # Если архив не готов - просто показываем спеки
+                        if status_message:
+                            try:
+                                await status_message.edit_text(
+                                    text=result_text,
+                                    disable_web_page_preview=True
+                                )
+                            except:
+                                pass
 
                 except Exception as e:
                     logger.error(f"Ошибка обработки URL: {e}")
