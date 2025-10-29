@@ -1267,14 +1267,8 @@ class TelegramBot:
                                 disable_web_page_preview=True
                             )
 
-                            # Очищаем временную директорию
-                            if cleaned_photos_paths:
-                                temp_dir = os.path.dirname(os.path.dirname(cleaned_photos_paths[0]))
-                                try:
-                                    shutil.rmtree(temp_dir)
-                                    logger.info(f"🗑️ Удалена временная директория: {temp_dir}")
-                                except Exception as e:
-                                    logger.warning(f"⚠️ Не удалось удалить temp_dir: {e}")
+                            # Временная директория уже автоматически очищена через TemporaryDirectory().cleanup()
+                            # в функции download_and_process_photos()
 
                         except Exception as e:
                             logger.error(f"❌ Ошибка отправки ZIP: {e}")
