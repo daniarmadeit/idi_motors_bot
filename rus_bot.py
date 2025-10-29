@@ -1383,120 +1383,52 @@ class TelegramBot:
                 )
 
         elif callback_data.startswith('download_ready_photos_'):
-            # Скачивание УЖЕ ГОТОВЫХ очищенных фото (без повторной обработки)
+            # Скачивание ZIP архива с очищенными фото (без медиа-группы, только архив)
             message_id = callback_data.split('_')[3]
             cleaned_zip_key = f"cleaned_zip_{message_id}"
-            cleaned_photos_key = f"cleaned_photos_{message_id}"
             temp_dir_key = f"temp_dir_{message_id}"
 
-            if cleaned_zip_key in context.user_data and cleaned_photos_key in context.user_data:
+            if cleaned_zip_key in context.user_data:
                 cleaned_zip = context.user_data[cleaned_zip_key]
-                cleaned_photos_paths = context.user_data[cleaned_photos_key]
 
-                # Отправляем фото альбомом
-                if cleaned_photos_paths:
-                    try:
-                        logger.info(f"📤 Отправка {len(cleaned_photos_paths)} очищенных фото (максимум 10 в альбоме)")
+                # СРАЗУ отправляем ZIP архив
+                try:
+                    logger.info(f"📦 Отправка ZIP архива ({len(cleaned_zip)} байт)")
 
-                        # Создаем список медиа файлов (максимум 10 в альбоме)
-                        media_group = []
-                        for idx, photo_path in enumerate(cleaned_photos_paths[:config.TELEGRAM_MEDIA_GROUP_LIMIT]):
-                            try:
-                                # Проверяем что файл существует
-                                if not os.path.exists(photo_path):
-                                    logger.warning(f"⚠️ Файл не найден: {photo_path}")
-                                    continue
+                    # Отправляем ZIP как документ
+                    await context.bot.send_document(
+                        chat_id=query.message.chat_id,
+                        document=io.BytesIO(cleaned_zip),
+                        filename="cleaned_photos.zip",
+                        caption=f"📦 Архив с очищенными фото"
+                    )
+                    logger.info("✅ ZIP архив отправлен")
 
-                                # Читаем файл
-                                with open(photo_path, 'rb') as photo_file:
-                                    photo_bytes = photo_file.read()
-                                    media_group.append(InputMediaPhoto(media=photo_bytes))
-                                    logger.info(f"✅ Добавлено фото {idx + 1}/{min(len(cleaned_photos_paths), config.TELEGRAM_MEDIA_GROUP_LIMIT)}")
-                            except Exception as e:
-                                logger.error(f"❌ Ошибка чтения фото {photo_path}: {e}")
-                                continue
+                    # Очищаем временную директорию (если есть)
+                    if temp_dir_key in context.user_data:
+                        temp_dir = context.user_data[temp_dir_key]
+                        try:
+                            shutil.rmtree(temp_dir)
+                            logger.info(f"🗑️ Удалена временная директория: {temp_dir}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить temp_dir: {e}")
+                        del context.user_data[temp_dir_key]
 
-                        if media_group:
-                            logger.info(f"📨 Отправка медиа-группы из {len(media_group)} фото...")
-                            await context.bot.send_media_group(
-                                chat_id=query.message.chat_id,
-                                media=media_group
-                            )
-                            logger.info("✅ Медиа-группа отправлена")
-                        else:
-                            logger.error("❌ Нет фото для отправки")
-                            await context.bot.send_message(
-                                chat_id=query.message.chat_id,
-                                text="❌ Не удалось загрузить обработанные фото"
-                            )
+                    # Удаляем ZIP из памяти
+                    del context.user_data[cleaned_zip_key]
 
-                        # Если фото больше 10, отправляем уведомление
-                        if len(cleaned_photos_paths) > config.TELEGRAM_MEDIA_GROUP_LIMIT:
-                            await context.bot.send_message(
-                                chat_id=query.message.chat_id,
-                                text=f"ℹ️ Показаны первые {config.TELEGRAM_MEDIA_GROUP_LIMIT} фото из {len(cleaned_photos_paths)}"
-                            )
-                    except Exception as e:
-                        logger.error(f"❌ Ошибка отправки медиа-группы: {e}")
-                        import traceback
-                        logger.error(traceback.format_exc())
-                        await context.bot.send_message(
-                            chat_id=query.message.chat_id,
-                            text=f"❌ Ошибка отправки фото: {str(e)[:200]}"
-                        )
-
-                # Предлагаем скачать ZIP
-                keyboard = [[InlineKeyboardButton("📦 Скачать ZIP архив", callback_data=f"download_zip_{message_id}")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text="✅ Фото отправлены!",
-                    reply_markup=reply_markup
-                )
+                except Exception as e:
+                    logger.error(f"❌ Ошибка отправки ZIP: {e}")
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=f"❌ Ошибка отправки архива: {str(e)[:200]}"
+                    )
             else:
                 await context.bot.send_message(
                     chat_id=query.message.chat_id,
                     text="❌ Очищенные фото не найдены или устарели"
                 )
 
-        elif callback_data.startswith('download_zip_'):
-            # Скачивание ZIP архива с очищенными фото
-            message_id = callback_data.split('_')[2]
-            zip_key = f"cleaned_zip_{message_id}"
-            temp_dir_key = f"temp_dir_{message_id}"
-            
-            if zip_key in context.user_data:
-                cleaned_zip = context.user_data[zip_key]
-                
-                # Отправляем ZIP архив
-                zip_buffer = io.BytesIO(cleaned_zip)
-                zip_buffer.name = "cleaned_photos.zip"
-                
-                await context.bot.send_document(
-                    chat_id=query.message.chat_id,
-                    document=zip_buffer,
-                    caption="📦 Архив с очищенными фото"
-                )
-                
-                # Очищаем временную директорию
-                if temp_dir_key in context.user_data:
-                    temp_dir = context.user_data[temp_dir_key]
-                    try:
-                        shutil.rmtree(temp_dir)
-                        logger.info(f"🗑️ Удалена временная директория: {temp_dir}")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Не удалось удалить временную директорию: {e}")
-                    del context.user_data[temp_dir_key]
-                
-                # Удаляем данные из памяти
-                del context.user_data[zip_key]
-            else:
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text="❌ Архив не найден или устарел"
-                )
-                
         elif callback_data.startswith('download_photos_'):
             # Скачивание фото для второй версии
             message_id = callback_data.split('_')[2]
