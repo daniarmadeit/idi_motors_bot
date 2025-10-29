@@ -935,6 +935,7 @@ class TelegramBot:
                     cleaned_photos_paths = None
 
                     if car_data.get('photo_download_url') and car_data['photo_download_url'] != "COLLECT_PHOTOS":
+                        logger.info(f"🎨 Начинаем очистку фото: {car_data['photo_download_url']}")
                         await status_message.edit_text("🎨 Очистка фото от водяных знаков...\n\n[░░░░░░░░░░░░░░░░░░░░] 0%")
 
                         photo_url = car_data['photo_download_url']
@@ -949,18 +950,20 @@ class TelegramBot:
                         if result:
                             cleaned_zip, cleaned_photos_paths = result
                             logger.info(f"✅ Фото очищены ({len(cleaned_photos_paths)} шт.)")
+                        else:
+                            logger.error("❌ Очистка фото не удалась - result is None")
+                    else:
+                        logger.warning(f"⚠️ Очистка пропущена. photo_download_url={car_data.get('photo_download_url')}")
 
                     # Создаем кнопку скачивания фото (только одна кнопка)
                     keyboard = []
 
-                    if car_data.get('photo_download_url'):
-                        if car_data['photo_download_url'] == "COLLECT_PHOTOS":
-                            # Вторая версия - собираем фото через бота
-                            keyboard.append([InlineKeyboardButton("📷 Скачать все фото", callback_data=f"download_photos_{update.message.message_id}")])
-                        else:
-                            # Первая версия - фото УЖЕ очищены, просто скачиваем
-                            if cleaned_zip:
-                                keyboard.append([InlineKeyboardButton("📷 Скачать фото", callback_data=f"download_ready_photos_{update.message.message_id}")])
+                    # Показываем кнопку ТОЛЬКО если фото успешно очищены
+                    if cleaned_zip and cleaned_photos_paths:
+                        keyboard.append([InlineKeyboardButton("📷 Скачать фото", callback_data=f"download_ready_photos_{update.message.message_id}")])
+                    elif car_data.get('photo_download_url') == "COLLECT_PHOTOS":
+                        # Вторая версия - собираем фото через бота (без очистки)
+                        keyboard.append([InlineKeyboardButton("📷 Скачать все фото", callback_data=f"download_photos_{update.message.message_id}")])
 
                     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
