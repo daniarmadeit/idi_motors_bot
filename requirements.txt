@@ -4,6 +4,7 @@ python-telegram-bot==20.7
 # Web scraping
 beautifulsoup4==4.12.2
 requests==2.31.0
+selenium==4.16.0
 
 # Image processing & AI
 iopaint==1.6.0

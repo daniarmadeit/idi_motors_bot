@@ -21,6 +21,11 @@ from PIL import Image, ImageDraw
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 from telegram.constants import ChatAction
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 
 import config
 
@@ -46,6 +51,36 @@ class BeForwardParser:
             self.openai_client = None
         else:
             self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+
+        # Инициализация Selenium WebDriver (headless Chrome)
+        self.driver = None
+        self._init_selenium()
+
+    def _init_selenium(self):
+        """Инициализация Selenium WebDriver"""
+        try:
+            options = Options()
+            options.add_argument('--headless')  # Без графического интерфейса
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument(f'user-agent={config.USER_AGENT}')
+
+            self.driver = webdriver.Chrome(options=options)
+            logger.info("✅ Selenium WebDriver инициализирован")
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации Selenium: {e}")
+            logger.warning("⚠️ Парсинг цен будет использовать BeautifulSoup (менее точно)")
+            self.driver = None
+
+    def __del__(self):
+        """Закрытие WebDriver при удалении объекта"""
+        if self.driver:
+            try:
+                self.driver.quit()
+                logger.info("✅ Selenium WebDriver закрыт")
+            except:
+                pass
     
     def parse_car_data(self, url: str) -> Dict:
         """Парсит данные автомобиля с BeForward"""
@@ -74,8 +109,8 @@ class BeForwardParser:
             # Характеристики
             car_data['specs'] = self._extract_specs(soup)
             
-            # Цена для Dar es Salaam (RORO)
-            car_data['lusaka_price'] = self._extract_lusaka_price(soup)
+            # Цена для Dar es Salaam (RORO) - используем Selenium для точности
+            car_data['lusaka_price'] = self._extract_lusaka_price(url_with_zambia)
             
             # Ссылка на скачивание фото
             car_data['photo_download_url'] = self._extract_photo_download_url(soup)
@@ -141,9 +176,74 @@ class BeForwardParser:
             return re.sub(r'tp_country_id=\d+', country_param, url)
         return f'{url}?{country_param}'
     
-    def _extract_lusaka_price(self, soup: BeautifulSoup) -> Optional[str]:
-        """Извлекает цену для DAR ES SALAAM из модального окна селектора портов"""
+    def _extract_lusaka_price(self, url: str) -> Optional[str]:
+        """Извлекает цену для DAR ES SALAAM используя Selenium для точности (JS-рендеринг)"""
+
+        # МЕТОД 1: Selenium (точно, но медленнее)
+        if self.driver:
+            return self._extract_price_with_selenium(url)
+
+        # МЕТОД 2: Fallback - BeautifulSoup (быстро, но может быть неточно)
+        logger.warning("⚠️ Selenium недоступен, используем BeautifulSoup (может быть неточно)")
+        return self._extract_price_with_bs4(url)
+
+    def _extract_price_with_selenium(self, url: str) -> Optional[str]:
+        """Извлекает цену используя Selenium (дожидается JS)"""
         try:
+            logger.info("🌐 Загрузка страницы через Selenium...")
+            self.driver.get(url)
+
+            # Ждем загрузки модального окна
+            wait = WebDriverWait(self.driver, 10)
+            wait.until(EC.presence_of_element_located((By.ID, "change-country-port-modal")))
+
+            # Даем 2 секунды на выполнение JavaScript
+            time.sleep(2)
+
+            # МЕТОД 1: Пробуем получить из #selected_total_price
+            try:
+                selected_price_elem = self.driver.find_element(By.ID, "selected_total_price")
+                price_text = selected_price_elem.text.strip()
+
+                if price_text and price_text != "ASK" and "$" in price_text:
+                    logger.info(f"✅ Цена из #selected_total_price: {price_text}")
+                    return price_text
+                else:
+                    logger.warning(f"⚠️ #selected_total_price содержит '{price_text}', ищем в модальном окне")
+            except Exception as e:
+                logger.warning(f"⚠️ #selected_total_price не найден: {e}")
+
+            # МЕТОД 2: Ищем checked radio input и его строку
+            try:
+                checked_input = self.driver.find_element(By.CSS_SELECTOR, 'input[type="radio"][checked]')
+                parent_row = checked_input.find_element(By.XPATH, "./ancestor::tr")
+
+                # Ищем цену в div.port-list-price
+                try:
+                    price_span = parent_row.find_element(By.CSS_SELECTOR, "div.port-list-price span.fn-total-price-display")
+                    price_text = price_span.text.strip()
+                    logger.info(f"✅ Цена из checked input (port-list-price): {price_text}")
+                    return price_text
+                except:
+                    # Fallback: прямой поиск span
+                    price_span = parent_row.find_element(By.CSS_SELECTOR, "span.fn-total-price-display")
+                    price_text = price_span.text.strip()
+                    logger.info(f"✅ Цена из checked input (span): {price_text}")
+                    return price_text
+
+            except Exception as e:
+                logger.error(f"❌ Не удалось найти цену через Selenium: {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка Selenium парсинга: {e}")
+            return None
+
+    def _extract_price_with_bs4(self, url: str) -> Optional[str]:
+        """Fallback метод извлечения цены через BeautifulSoup (старый способ)"""
+        try:
+            response = self.session.get(url, timeout=10)
+            soup = BeautifulSoup(response.content, 'html.parser')
             # Ищем модальное окно с ценами
             modal = soup.select_one('#change-country-port-modal')
 
