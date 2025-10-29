@@ -552,7 +552,8 @@ class BeForwardParser:
         bot=None,
         chat_id: int = None,
         progress_message=None,
-        iopaint_url: str = None
+        iopaint_url: str = None,
+        car_data_text: str = None
     ) -> Optional[Tuple[bytes, List[str]]]:
         """Скачивает фото ZIP, удаляет водяные знаки через IOPaint HTTP API
 
@@ -562,6 +563,7 @@ class BeForwardParser:
             chat_id: ID чата для отправки статуса
             progress_message: Сообщение для обновления прогресса
             iopaint_url: URL IOPaint сервера (по умолчанию из config)
+            car_data_text: Текст с данными автомобиля для добавления в ZIP
 
         Returns:
             Кортеж из (ZIP архив в байтах, список путей к обработанным фото) или None при ошибке
@@ -693,10 +695,17 @@ class BeForwardParser:
             ]
 
             with zipfile.ZipFile(cleaned_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Добавляем фото
                 for file in processed_files:
                     file_path = os.path.join(output_dir, file)
                     if os.path.isfile(file_path):
                         zip_file.write(file_path, arcname=file)
+
+                # Добавляем TXT файл с данными автомобиля если есть
+                if car_data_text:
+                    txt_content = car_data_text.replace('**', '').replace('*', '')
+                    zip_file.writestr("car_data.txt", txt_content.encode('utf-8'))
+                    logger.info("✅ TXT файл добавлен в архив")
 
             # Читаем ZIP в память
             with open(cleaned_zip_path, 'rb') as f:
@@ -933,20 +942,17 @@ class TelegramBot:
                             photo_url,
                             bot=context.bot,
                             chat_id=update.effective_chat.id,
-                            progress_message=status_message
+                            progress_message=status_message,
+                            car_data_text=result_text
                         )
 
                         if result:
                             cleaned_zip, cleaned_photos_paths = result
                             logger.info(f"✅ Фото очищены ({len(cleaned_photos_paths)} шт.)")
 
-                    # Создаем кнопки
-                    keyboard = [
-                        [InlineKeyboardButton("📥 Скачать TXT", callback_data=f"download_txt_{update.message.message_id}")],
-                        [InlineKeyboardButton("✨ Генерировать продающее описание", callback_data=f"generate_description_{update.message.message_id}")]
-                    ]
+                    # Создаем кнопку скачивания фото (только одна кнопка)
+                    keyboard = []
 
-                    # Добавляем кнопку скачивания фото
                     if car_data.get('photo_download_url'):
                         if car_data['photo_download_url'] == "COLLECT_PHOTOS":
                             # Вторая версия - собираем фото через бота
@@ -954,9 +960,9 @@ class TelegramBot:
                         else:
                             # Первая версия - фото УЖЕ очищены, просто скачиваем
                             if cleaned_zip:
-                                keyboard.append([InlineKeyboardButton("📷 Скачать очищенные фото", callback_data=f"download_ready_photos_{update.message.message_id}")])
+                                keyboard.append([InlineKeyboardButton("📷 Скачать фото", callback_data=f"download_ready_photos_{update.message.message_id}")])
 
-                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
                     # Сохраняем данные для скачивания и генерации описания
                     context.user_data[f"car_data_{update.message.message_id}"] = result_text
@@ -1006,12 +1012,13 @@ class TelegramBot:
                         except Exception as e:
                             logger.error(f"❌ Ошибка отправки превью: {e}")
 
-                    # Отправляем кнопки отдельным сообщением
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text="📥 Доступные действия:",
-                        reply_markup=reply_markup
-                    )
+                    # Отправляем кнопку скачивания если есть
+                    if reply_markup:
+                        await context.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text="📥 Скачать:",
+                            reply_markup=reply_markup
+                        )
 
                     # Удаляем статусное сообщение
                     try:
@@ -1040,78 +1047,8 @@ class TelegramBot:
         await query.answer()
         
         callback_data = query.data
-        
-        if callback_data.startswith('generate_description_'):
-            # Генерация продающего описания
-            message_id = callback_data.split('_')[2]
-            car_full_data_key = f"car_full_data_{message_id}"
-            
-            if car_full_data_key in context.user_data:
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text="🤖 Генерирую продающее описание через GPT-5-nano...\n\n⏳ Это может занять до 30 секунд\n💡 GPT-5-nano иногда работает медленно"
-                )
-                
-                # Генерируем описание в отдельном потоке
-                loop = asyncio.get_event_loop()
-                car_full_data = context.user_data[car_full_data_key]
-                
-                logger.info(f"🔄 Запускаем генерацию описания для сообщения {message_id}")
-                start_time = time.time()
-                
-                description = await loop.run_in_executor(
-                    None,
-                    self.parser.generate_sales_description,
-                    car_full_data
-                )
-                
-                end_time = time.time()
-                logger.info(f"⏱️ Генерация заняла {end_time - start_time:.2f} секунд")
-                
-                if description:
-                    # Отправляем описание (без parse_mode, чтобы избежать ошибок с Markdown)
-                    await context.bot.send_message(
-                        chat_id=query.message.chat_id,
-                        text=description
-                    )
-                else:
-                    await context.bot.send_message(
-                        chat_id=query.message.chat_id,
-                        text="❌ Не удалось сгенерировать описание. Проверьте логи."
-                    )
-            else:
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text="❌ Данные автомобиля не найдены или устарели"
-                )
-                
-        elif callback_data.startswith('download_txt_'):
-            # Скачивание TXT
-            message_id = callback_data.split('_')[2]
-            data_key = f"car_data_{message_id}"
-            
-            if data_key in context.user_data:
-                # Получаем данные
-                car_data_text = context.user_data[data_key]
-                
-                # Создаем файл
-                file_content = car_data_text.replace('**', '').replace('*', '')
-                file_buffer = io.BytesIO(file_content.encode('utf-8'))
-                file_buffer.name = "beforward_car_data.txt"
-                
-                # Отправляем файл
-                await context.bot.send_document(
-                    chat_id=query.message.chat_id,
-                    document=file_buffer,
-                    caption="📋 Данные автомобиля"
-                )
-                
-                # Удаляем данные из памяти
-                del context.user_data[data_key]
-            else:
-                await query.edit_message_text("❌ Данные не найдены или устарели")
-                
-        elif callback_data.startswith('download_cleaned_photos_'):
+
+        if callback_data.startswith('download_cleaned_photos_'):
             # Скачивание фото с очисткой водяных знаков через IOPaint
             message_id = callback_data.split('_')[3]
             photo_url_key = f"photo_url_{message_id}"
