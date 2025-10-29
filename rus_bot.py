@@ -153,11 +153,23 @@ class BeForwardParser:
 
             logger.info("✅ Найдено модальное окно с ценами")
 
-            # Ищем ЯЧЕЙКУ с классом destination-selected (это выбранный порт по умолчанию)
-            selected_cell = modal.select_one('td.destination-selected')
+            # МЕТОД 0: Ищем прямо #selected_total_price (самый надёжный)
+            selected_price_elem = soup.select_one('#selected_total_price')
+            if selected_price_elem:
+                price_text = selected_price_elem.get_text(strip=True)
+                logger.info(f"💰 Найдена цена через #selected_total_price: '{price_text}'")
+                price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '').replace(',', '')
+                logger.info(f"✨ Очищенная цена: '{price_text}'")
+                return price_text
+            else:
+                logger.warning("⚠️ Не найден #selected_total_price")
+
+            # МЕТОД 1: Ищем ТОЧНО выбранную строку с двумя нужными классами
+            # td.destination-selected.fn-quote-form-row-bg-selected - это ТОЧНО выбранная ячейка
+            selected_cell = modal.select_one('td.destination-selected.fn-quote-form-row-bg-selected')
 
             if selected_cell:
-                logger.info("✅ Найдена выбранная ячейка (destination-selected)")
+                logger.info("✅ Найдена ТОЧНО выбранная ячейка (destination-selected + fn-quote-form-row-bg-selected)")
 
                 # Ищем span с ценой в этой ячейке
                 price_span = selected_cell.select_one('span.fn-total-price-display')
@@ -173,7 +185,40 @@ class BeForwardParser:
                 else:
                     logger.warning("⚠️ Не найден span с ценой в выбранной ячейке")
             else:
-                logger.warning("⚠️ Не найдена выбранная ячейка (destination-selected)")
+                logger.warning("⚠️ Не найдена точно выбранная ячейка (destination-selected + fn-quote-form-row-bg-selected)")
+
+                # МЕТОД 2: Пробуем просто по destination-selected
+                selected_cell = modal.select_one('td.destination-selected')
+                if selected_cell:
+                    logger.info("✅ Найдена ячейка только по destination-selected (без bg-selected)")
+
+                    price_span = selected_cell.select_one('span.fn-total-price-display')
+                    if price_span:
+                        price_text = price_span.get_text(strip=True)
+                        logger.info(f"💰 Найдена цена: '{price_text}'")
+                        price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+                        logger.info(f"✨ Очищенная цена: '{price_text}'")
+                        return price_text
+                else:
+                    logger.warning("⚠️ Не найдена выбранная ячейка (destination-selected)")
+
+            # МЕТОД 3: Ищем выбранную строку целиком, потом ячейку цены
+            selected_row = modal.select_one('tr.fn-destination-price-row-bg-selected')
+            if selected_row:
+                logger.info("✅ Найдена выбранная строка (fn-destination-price-row-bg-selected)")
+
+                # Ищем ячейку с ценой в этой строке
+                price_cell = selected_row.select_one('td.table-total-price')
+                if price_cell:
+                    price_span = price_cell.select_one('span.fn-total-price-display')
+                    if price_span:
+                        price_text = price_span.get_text(strip=True)
+                        logger.info(f"💰 Найдена цена через выбранную строку: '{price_text}'")
+                        price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+                        logger.info(f"✨ Очищенная цена: '{price_text}'")
+                        return price_text
+            else:
+                logger.warning("⚠️ Не найдена выбранная строка (fn-destination-price-row-bg-selected)")
 
             # Fallback: ищем через input с data-port="DAR ES SALAAM"
             logger.info("🔄 Ищем input с data-port='DAR ES SALAAM'...")
