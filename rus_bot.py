@@ -182,30 +182,40 @@ class BeForwardParser:
             else:
                 logger.warning("⚠️ Не найдена выбранная строка (selected)")
 
-            # Fallback: ищем первую строку с DAR ES SALAAM
-            logger.info("🔄 Пробуем найти DAR ES SALAAM в списке строк...")
-            all_rows = modal.select('tr.fn-destination-price-row')
-            logger.info(f"📋 Найдено строк: {len(all_rows)}")
+            # Fallback: ищем через input с data-port="DAR ES SALAAM"
+            logger.info("🔄 Ищем input с data-port='DAR ES SALAAM'...")
 
-            # Выводим первые 3 строки для отладки
-            for idx, row in enumerate(all_rows[:3]):
-                row_text = row.get_text(strip=True)
-                logger.info(f"🔍 Строка #{idx+1}: {row_text[:150]}")
+            # Ищем input элементы с data-port
+            dar_inputs = modal.select('input[data-port]')
+            logger.info(f"📋 Найдено input элементов с data-port: {len(dar_inputs)}")
 
-            for idx, row in enumerate(all_rows):
-                row_text = row.get_text().upper()
+            for input_elem in dar_inputs:
+                port_name = input_elem.get('data-port', '')
+                port_via = input_elem.get('data-via', '')
 
-                # Ищем DAR ES SALAAM (может быть без RORO в тексте)
-                if 'DAR ES SALAAM' in row_text or 'DARESSALAAM' in row_text.replace(' ', ''):
-                    logger.info(f"✅ Найден DAR ES SALAAM в строке #{idx+1}")
-                    logger.info(f"📄 Текст строки: {row_text[:200]}")
+                if 'DAR ES SALAAM' in port_name.upper():
+                    logger.info(f"✅ Найден input: port='{port_name}', via='{port_via}'")
 
-                    price_span = row.select_one('span.fn-total-price-display')
-                    if price_span:
-                        price_text = price_span.get_text(strip=True)
-                        price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
-                        logger.info(f"💰 Цена: '{price_text}'")
-                        return price_text
+                    # Проверяем что это RORO
+                    if 'RORO' in port_via.upper() or 'pick up at port' in port_via.lower():
+                        logger.info("✅ Это RORO метод")
+
+                        # Ищем родительскую строку (tr)
+                        parent_row = input_elem.find_parent('tr')
+
+                        if parent_row:
+                            # Ищем цену в этой строке
+                            price_span = parent_row.select_one('span.fn-total-price-display')
+
+                            if price_span:
+                                price_text = price_span.get_text(strip=True)
+                                price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+                                logger.info(f"💰 Цена: '{price_text}'")
+                                return price_text
+                            else:
+                                logger.warning("⚠️ Не найден span с ценой в строке")
+                        else:
+                            logger.warning("⚠️ Не найден родительский tr для input")
 
             logger.error("❌ Не удалось найти цену для DAR ES SALAAM")
             return None
