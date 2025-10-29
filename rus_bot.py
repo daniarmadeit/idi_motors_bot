@@ -945,26 +945,42 @@ class TelegramBot:
                     # Парсим данные
                     car_data = self.parser.parse_car_data(url)
 
-                    # Обновляем статус
-                    await status_message.edit_text("📊 Обработка данных...", parse_mode='Markdown')
-
                     # Форматируем результат
                     result_text = self.parser.format_car_data(car_data)
 
-                    # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО
+                    # СРАЗУ ОТПРАВЛЯЕМ СПЕКИ (до обработки фото)
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=result_text,
+                        disable_web_page_preview=True
+                    )
+
+                    # Удаляем статусное сообщение "Парсинг данных..."
+                    try:
+                        await status_message.delete()
+                    except:
+                        pass
+
+                    # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (после отправки спеков)
                     cleaned_zip = None
                     cleaned_photos_paths = None
+                    progress_message = None
 
                     if car_data.get('photo_download_url') and car_data['photo_download_url'] != "COLLECT_PHOTOS":
                         logger.info(f"🎨 Начинаем очистку фото: {car_data['photo_download_url']}")
-                        await status_message.edit_text("🎨 Очистка фото от водяных знаков...\n\n[░░░░░░░░░░░░░░░░░░░░] 0%")
+
+                        # Создаём новое сообщение с прогрессом
+                        progress_message = await context.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text="🎨 Очистка фото от водяных знаков...\n\n[░░░░░░░░░░░░░░░░░░░░] 0%"
+                        )
 
                         photo_url = car_data['photo_download_url']
                         result = await self.parser.download_and_process_photos(
                             photo_url,
                             bot=context.bot,
                             chat_id=update.effective_chat.id,
-                            progress_message=status_message,
+                            progress_message=progress_message,
                             car_data_text=result_text
                         )
 
@@ -1006,13 +1022,6 @@ class TelegramBot:
                             temp_dir = os.path.dirname(os.path.dirname(cleaned_photos_paths[0]))
                             context.user_data[f"temp_dir_{update.message.message_id}"] = temp_dir
 
-                    # Отправляем результат (спеки)
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=result_text,
-                        disable_web_page_preview=True
-                    )
-
                     # Отправляем ПРЕВЬЮ (первые 3 фото) если они есть
                     if cleaned_photos_paths and len(cleaned_photos_paths) > 0:
                         try:
@@ -1044,15 +1053,25 @@ class TelegramBot:
                             reply_markup=reply_markup
                         )
 
-                    # Удаляем статусное сообщение
+                    # Удаляем сообщение прогресса если оно было создано
+                    if progress_message:
+                        try:
+                            await progress_message.delete()
+                        except:
+                            pass
+
+                except Exception as e:
+                    logger.error(f"Ошибка обработки URL: {e}")
+                    # Пытаемся удалить статусное сообщение при ошибке
                     try:
                         await status_message.delete()
                     except:
                         pass
-
-                except Exception as e:
-                    logger.error(f"Ошибка обработки URL: {e}")
-                    await status_message.edit_text(f"❌ Ошибка: {str(e)}", parse_mode='Markdown')
+                    # Отправляем сообщение об ошибке
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=f"❌ Ошибка: {str(e)}"
+                    )
 
                 # Помечаем задачу как выполненную
                 self.url_queue.task_done()
