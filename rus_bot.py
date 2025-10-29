@@ -52,35 +52,45 @@ class BeForwardParser:
         else:
             self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
 
-        # Инициализация Selenium WebDriver (headless Chrome)
-        self.driver = None
-        self._init_selenium()
+        # НЕ создаем постоянный WebDriver - создаем по требованию и закрываем
+        self.selenium_available = self._check_selenium_available()
 
-    def _init_selenium(self):
-        """Инициализация Selenium WebDriver"""
+    def _check_selenium_available(self) -> bool:
+        """Проверяет доступность Selenium WebDriver"""
         try:
             options = Options()
-            options.add_argument('--headless')  # Без графического интерфейса
+            options.add_argument('--headless')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
-            options.add_argument(f'user-agent={config.USER_AGENT}')
 
-            self.driver = webdriver.Chrome(options=options)
-            logger.info("✅ Selenium WebDriver инициализирован")
+            # Создаем тестовый драйвер и сразу закрываем
+            driver = webdriver.Chrome(options=options)
+            driver.quit()
+            logger.info("✅ Selenium WebDriver доступен")
+            return True
         except Exception as e:
-            logger.error(f"❌ Ошибка инициализации Selenium: {e}")
+            logger.error(f"❌ Selenium недоступен: {e}")
             logger.warning("⚠️ Парсинг цен будет использовать BeautifulSoup (менее точно)")
-            self.driver = None
+            return False
+
+    def _create_webdriver(self):
+        """Создает новый WebDriver (используется как context manager)"""
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument(f'user-agent={config.USER_AGENT}')
+        return webdriver.Chrome(options=options)
 
     def __del__(self):
-        """Закрытие WebDriver при удалении объекта"""
-        if self.driver:
-            try:
-                self.driver.quit()
-                logger.info("✅ Selenium WebDriver закрыт")
-            except:
-                pass
+        """Закрытие ресурсов при удалении объекта"""
+        try:
+            self.session.close()
+            logger.info("✅ HTTP Session закрыта")
+        except:
+            pass
     
     def parse_car_data(self, url: str) -> Dict:
         """Парсит данные автомобиля с BeForward"""
@@ -180,7 +190,7 @@ class BeForwardParser:
         """Извлекает цену для DAR ES SALAAM используя Selenium для точности (JS-рендеринг)"""
 
         # МЕТОД 1: Selenium (точно, но медленнее)
-        if self.driver:
+        if self.selenium_available:
             return self._extract_price_with_selenium(url)
 
         # МЕТОД 2: Fallback - BeautifulSoup (быстро, но может быть неточно)
@@ -189,12 +199,14 @@ class BeForwardParser:
 
     def _extract_price_with_selenium(self, url: str) -> Optional[str]:
         """Извлекает цену используя Selenium (дожидается JS)"""
+        driver = None
         try:
             logger.info("🌐 Загрузка страницы через Selenium...")
-            self.driver.get(url)
+            driver = self._create_webdriver()
+            driver.get(url)
 
             # Ждем загрузки модального окна
-            wait = WebDriverWait(self.driver, 10)
+            wait = WebDriverWait(driver, 10)
             wait.until(EC.presence_of_element_located((By.ID, "change-country-port-modal")))
 
             # Даем 2 секунды на выполнение JavaScript
@@ -202,7 +214,7 @@ class BeForwardParser:
 
             # МЕТОД 1: Пробуем получить из #selected_total_price
             try:
-                selected_price_elem = self.driver.find_element(By.ID, "selected_total_price")
+                selected_price_elem = driver.find_element(By.ID, "selected_total_price")
                 price_text = selected_price_elem.text.strip()
 
                 if price_text and price_text != "ASK" and "$" in price_text:
@@ -215,7 +227,7 @@ class BeForwardParser:
 
             # МЕТОД 2: Ищем checked radio input и его строку
             try:
-                checked_input = self.driver.find_element(By.CSS_SELECTOR, 'input[type="radio"][checked]')
+                checked_input = driver.find_element(By.CSS_SELECTOR, 'input[type="radio"][checked]')
                 parent_row = checked_input.find_element(By.XPATH, "./ancestor::tr")
 
                 # Ищем цену в div.port-list-price
@@ -238,6 +250,14 @@ class BeForwardParser:
         except Exception as e:
             logger.error(f"❌ Ошибка Selenium парсинга: {e}")
             return None
+        finally:
+            # КРИТИЧНО: Всегда закрываем WebDriver
+            if driver:
+                try:
+                    driver.quit()
+                    logger.debug("🔒 WebDriver закрыт")
+                except:
+                    pass
 
     def _extract_price_with_bs4(self, url: str) -> Optional[str]:
         """Fallback метод извлечения цены через BeautifulSoup (старый способ)"""
@@ -653,6 +673,7 @@ class BeForwardParser:
             True если обработка успешна, False иначе
         """
         filename = os.path.basename(image_path)
+        img = None  # Для finally блока
 
         try:
             # Открываем изображение
@@ -666,7 +687,6 @@ class BeForwardParser:
 
             if cleaned_img is None:
                 logger.error(f"❌ Не удалось удалить водяной знак с {filename}")
-                img.close()
                 return False
 
             img.close()
@@ -703,7 +723,6 @@ class BeForwardParser:
                 f.write(final_buffer.getvalue())
 
             logger.info(f"💾 Сохранено {idx + 1}/{total}: {filename}")
-            img.close()
             return True
 
         except Exception as e:
@@ -711,6 +730,13 @@ class BeForwardParser:
             import traceback
             logger.error(traceback.format_exc())
             return False
+        finally:
+            # КРИТИЧНО: Закрываем изображение в любом случае
+            if img:
+                try:
+                    img.close()
+                except:
+                    pass
 
     async def download_and_process_photos(
         self,
@@ -737,13 +763,14 @@ class BeForwardParser:
         if iopaint_url is None:
             iopaint_url = config.IOPAINT_URL
 
-        try:
-            # Проверяем доступность IOPaint сервера
-            if not self._check_iopaint_server(iopaint_url):
-                return None
+        # Проверяем доступность IOPaint сервера
+        if not self._check_iopaint_server(iopaint_url):
+            return None
 
-            # Создаём временные директории
-            temp_dir = tempfile.mkdtemp()
+        # КРИТИЧНО: Используем TemporaryDirectory для автоматической очистки
+        temp_base_dir = tempfile.TemporaryDirectory()
+        try:
+            temp_dir = temp_base_dir.name
             zip_path = os.path.join(temp_dir, "photos.zip")
             extract_dir = os.path.join(temp_dir, "extracted")
             output_dir = os.path.join(temp_dir, "cleaned")
@@ -902,6 +929,13 @@ class BeForwardParser:
                     pass
 
             return None
+        finally:
+            # КРИТИЧНО: Очищаем временную директорию в любом случае
+            try:
+                temp_base_dir.cleanup()
+                logger.debug("🗑️ Временная директория очищена")
+            except Exception as cleanup_error:
+                logger.warning(f"⚠️ Не удалось очистить temp_dir: {cleanup_error}")
 
     def format_car_data(self, car_data: Dict) -> str:
         """Форматирует данные для отправки в Telegram"""
@@ -1002,7 +1036,7 @@ class TelegramBot:
         self.token = token
         self.parser = BeForwardParser()
         self.application = None
-        self.url_queue = asyncio.Queue()
+        self.url_queue = asyncio.Queue(maxsize=10)  # КРИТИЧНО: Ограничение очереди (защита от DOS)
         self.is_processing = False
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1152,6 +1186,9 @@ class TelegramBot:
                     # Сохраняем данные для скачивания и генерации описания
                     context.user_data[f"car_data_{update.message.message_id}"] = result_text
                     context.user_data[f"car_full_data_{update.message.message_id}"] = car_data
+
+                    # КРИТИЧНО: Сохраняем timestamp для TTL (автоочистка через 1 час)
+                    context.user_data[f"timestamp_{update.message.message_id}"] = time.time()
 
                     # Сохраняем фото URLs если есть (вторая версия)
                     if car_data.get('photo_urls'):
@@ -1551,10 +1588,57 @@ class TelegramBot:
         # Обработчик ошибок
         self.application.add_error_handler(self.error_handler)
     
+    async def cleanup_old_user_data(self, context: ContextTypes.DEFAULT_TYPE):
+        """Периодическая очистка старых данных из context.user_data (каждые 30 минут)"""
+        while True:
+            try:
+                await asyncio.sleep(1800)  # 30 минут
+
+                current_time = time.time()
+                ttl = 3600  # 1 час
+                keys_to_delete = []
+
+                # Проходим по всем пользователям
+                for user_id, user_data in context.application.user_data.items():
+                    # Находим все timestamp_ ключи
+                    timestamp_keys = [k for k in user_data.keys() if k.startswith("timestamp_")]
+
+                    for ts_key in timestamp_keys:
+                        timestamp = user_data.get(ts_key)
+                        if timestamp and (current_time - timestamp) > ttl:
+                            # Извлекаем message_id
+                            message_id = ts_key.replace("timestamp_", "")
+
+                            # Собираем все ключи для удаления
+                            keys_to_delete.append((user_id, f"car_data_{message_id}"))
+                            keys_to_delete.append((user_id, f"car_full_data_{message_id}"))
+                            keys_to_delete.append((user_id, f"photo_data_{message_id}"))
+                            keys_to_delete.append((user_id, f"cleaned_zip_{message_id}"))
+                            keys_to_delete.append((user_id, f"cleaned_photos_{message_id}"))
+                            keys_to_delete.append((user_id, f"temp_dir_{message_id}"))
+                            keys_to_delete.append((user_id, ts_key))
+
+                # Удаляем старые данные
+                deleted_count = 0
+                for user_id, key in keys_to_delete:
+                    if key in context.application.user_data.get(user_id, {}):
+                        del context.application.user_data[user_id][key]
+                        deleted_count += 1
+
+                if deleted_count > 0:
+                    logger.info(f"🗑️ Автоочистка: удалено {deleted_count} старых записей (TTL: {ttl}s)")
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка автоочистки user_data: {e}")
+
     async def post_init(self, application):
         """Выполняется после запуска бота"""
         await self.set_bot_status("🟢 Онлайн")
         logger.info("Бот запущен и готов к работе")
+
+        # КРИТИЧНО: Запускаем фоновую задачу автоочистки
+        asyncio.create_task(self.cleanup_old_user_data(application))
+        logger.info("✅ Запущена фоновая задача автоочистки context.user_data (TTL: 1 час)")
     
     async def post_shutdown(self, application):
         """Выполняется при завершении работы бота"""
