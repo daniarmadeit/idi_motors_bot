@@ -192,13 +192,19 @@ class BeForwardParser:
             for input_elem in dar_inputs:
                 port_name = input_elem.get('data-port', '')
                 port_via = input_elem.get('data-via', '')
+                with_clearing = input_elem.get('data-with-clearing', '')
 
                 if 'DAR ES SALAAM' in port_name.upper():
-                    logger.info(f"✅ Найден input: port='{port_name}', via='{port_via}'")
+                    logger.info(f"✅ Найден input: port='{port_name}', via='{port_via}', with-clearing='{with_clearing}'")
+
+                    # Пропускаем "with customs clearance" - нам нужен базовый RORO
+                    if with_clearing or 'customs' in port_via.lower():
+                        logger.info("⚠️ Пропускаем - это вариант с таможенной очисткой")
+                        continue
 
                     # Проверяем что это RORO
                     if 'RORO' in port_via.upper() or 'pick up at port' in port_via.lower():
-                        logger.info("✅ Это RORO метод")
+                        logger.info("✅ Это базовый RORO метод (без customs)")
 
                         # Ищем родительскую строку (tr)
                         parent_row = input_elem.find_parent('tr')
