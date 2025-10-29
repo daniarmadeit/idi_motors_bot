@@ -953,11 +953,11 @@ class BeForwardParser:
             result += "ℹ️ Цена не найдена\n\n"
         
         if car_data.get('specs'):
-            result += "📋 Характеристики:\n"
+            result += "📋 Specifications:\n"
             for key, value in car_data['specs'].items():
                 result += f"• {key}: {value}\n"
         else:
-            result += "ℹ️ Характеристики не найдены\n"
+            result += "ℹ️ Specifications not found\n"
         
         return result
     
