@@ -142,66 +142,70 @@ class BeForwardParser:
         return f'{url}?{country_param}'
     
     def _extract_lusaka_price(self, soup: BeautifulSoup) -> Optional[str]:
-        """Извлекает цену для первого города в списке (DAR ES SALAAM)"""
+        """Извлекает цену для DAR ES SALAAM из модального окна селектора портов"""
         try:
-            # Ищем все заголовки портов/городов
-            port_titles = soup.select('p.port-list-title')
-            logger.info(f"🔍 Найдено городов: {len(port_titles)}")
-            
-            if not port_titles:
-                logger.warning("❌ Не найдено ни одного города")
+            # Ищем модальное окно с ценами
+            modal = soup.select_one('#change-country-port-modal')
+
+            if not modal:
+                logger.warning("❌ Не найдено модальное окно #change-country-port-modal")
                 return None
-            
-            # БЕРЁМ САМЫЙ ПЕРВЫЙ ГОРОД
-            first_port = port_titles[0]
-            city_name = first_port.get_text(strip=True)
-            logger.info(f"✅ Берём первый город: '{city_name}'")
-            
-            # Проверяем, что это DAR ES SALAAM
-            if 'dar' not in city_name.lower() or 'salaam' not in city_name.lower():
-                logger.warning(f"⚠️ Первый город не DAR ES SALAAM, а '{city_name}'")
-                # Но всё равно берём его цену
-            
-            # Ищем родительский tr элемент
-            tr_element = first_port.find_parent('tr')
-            
-            if not tr_element:
-                logger.error("❌ Не найден родительский TR элемент!")
-                return None
-            
-            logger.info(f"📄 HTML строки (первые 1000 символов):\n{tr_element.prettify()[:1000]}")
-            
-            # Ищем ячейку с ценой (table-total-price)
-            price_cell = tr_element.select_one('td.table-total-price')
-            
-            if price_cell:
-                logger.info("✅ Найдена ячейка table-total-price")
-                # Ищем span с ценой
-                price_span = price_cell.select_one('span.fn-total-price-display')
-                
-                if price_span:
-                    price_text = price_span.get_text(strip=True)
-                    logger.info(f"💰 Найдена цена: '{price_text}'")
-                    
-                    # Удаляем &nbsp; и лишние пробелы
-                    price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
-                    logger.info(f"✨ Очищенная цена: '{price_text}'")
-                    return price_text
+
+            logger.info("✅ Найдено модальное окно с ценами")
+
+            # Ищем выбранную строку (selected) - это должен быть DAR ES SALAAM RORO
+            selected_row = modal.select_one('tr.fn-destination-price-row-bg-selected')
+
+            if selected_row:
+                logger.info("✅ Найдена выбранная строка (selected)")
+
+                # Проверяем что это DAR ES SALAAM
+                city_text = selected_row.get_text()
+                if 'DAR ES SALAAM' in city_text.upper():
+                    logger.info("✅ Выбранный город: DAR ES SALAAM")
+
+                    # Ищем цену в этой строке
+                    price_span = selected_row.select_one('span.fn-total-price-display')
+
+                    if price_span:
+                        price_text = price_span.get_text(strip=True)
+                        logger.info(f"💰 Найдена цена: '{price_text}'")
+
+                        # Удаляем &nbsp; и лишние пробелы
+                        price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+                        logger.info(f"✨ Очищенная цена: '{price_text}'")
+                        return price_text
+                    else:
+                        logger.warning("⚠️ Не найден span с ценой в выбранной строке")
                 else:
-                    logger.warning("⚠️ Не найден span.fn-total-price-display")
-                    logger.info(f"📄 HTML ячейки с ценой:\n{price_cell.prettify()}")
+                    logger.warning(f"⚠️ Выбранный город не DAR ES SALAAM: {city_text[:100]}")
             else:
-                logger.warning("⚠️ Не найдена ячейка td.table-total-price")
-                # Выводим все td в строке
-                all_tds = tr_element.find_all('td')
-                logger.info(f"📦 Всего TD в строке: {len(all_tds)}")
-                for idx, td in enumerate(all_tds):
-                    td_classes = td.get('class', [])
-                    logger.info(f"TD #{idx+1} классы: {td_classes}")
-            
+                logger.warning("⚠️ Не найдена выбранная строка (selected)")
+
+            # Fallback: ищем первую строку с DAR ES SALAAM
+            logger.info("🔄 Пробуем найти DAR ES SALAAM в списке строк...")
+            all_rows = modal.select('tr.fn-destination-price-row')
+            logger.info(f"📋 Найдено строк: {len(all_rows)}")
+
+            for idx, row in enumerate(all_rows):
+                row_text = row.get_text().upper()
+                if 'DAR ES SALAAM' in row_text and 'RORO' in row_text:
+                    logger.info(f"✅ Найден DAR ES SALAAM RORO в строке #{idx+1}")
+
+                    price_span = row.select_one('span.fn-total-price-display')
+                    if price_span:
+                        price_text = price_span.get_text(strip=True)
+                        price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+                        logger.info(f"💰 Цена: '{price_text}'")
+                        return price_text
+
+            logger.error("❌ Не удалось найти цену для DAR ES SALAAM")
             return None
+
         except Exception as e:
             logger.error(f"Ошибка извлечения цены: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
     
     def _extract_specs(self, soup: BeautifulSoup) -> Dict:
