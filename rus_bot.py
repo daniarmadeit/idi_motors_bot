@@ -827,6 +827,8 @@ class TelegramBot:
         self.token = token
         self.parser = BeForwardParser()
         self.application = None
+        self.url_queue = asyncio.Queue()
+        self.is_processing = False
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start"""
@@ -856,9 +858,9 @@ class TelegramBot:
         await update.message.reply_text(restart_text)
         
     async def handle_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик URL"""
+        """Обработчик URL - добавляет в очередь"""
         url = update.message.text.strip()
-        
+
         # Проверяем, что это ссылка на BeForward
         if 'beforward.jp' not in url.lower():
             await update.message.reply_text(
@@ -866,63 +868,142 @@ class TelegramBot:
                 parse_mode='Markdown'
             )
             return
-        
-        # Показываем статус "печатает"
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        
-        # Отправляем сообщение о начале парсинга
-        status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
-        
-        try:
-            # Парсим данные
-            car_data = self.parser.parse_car_data(url)
-            
-            # Обновляем статус
-            await status_message.edit_text("📊 Обработка данных...", parse_mode='Markdown')
-            
-            # Форматируем результат
-            result_text = self.parser.format_car_data(car_data)
-            
-            # Создаем кнопки
-            keyboard = [
-                [InlineKeyboardButton("📥 Скачать TXT", callback_data=f"download_txt_{update.message.message_id}")],
-                [InlineKeyboardButton("✨ Генерировать продающее описание", callback_data=f"generate_description_{update.message.message_id}")]
-            ]
-            
-            # Добавляем кнопку скачивания фото
-            if car_data.get('photo_download_url'):
-                if car_data['photo_download_url'] == "COLLECT_PHOTOS":
-                    # Вторая версия - собираем фото через бота
-                    keyboard.append([InlineKeyboardButton("📷 Скачать все фото", callback_data=f"download_photos_{update.message.message_id}")])
-                else:
-                    # Первая версия - прямая ссылка с очисткой через IOPaint
-                    keyboard.append([InlineKeyboardButton("📷 Скачать все фото (очищенные)", callback_data=f"download_cleaned_photos_{update.message.message_id}")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Сохраняем данные для скачивания и генерации описания
-            context.user_data[f"car_data_{update.message.message_id}"] = result_text
-            context.user_data[f"car_full_data_{update.message.message_id}"] = car_data  # Сохраняем полные данные для OpenAI
-            
-            # Сохраняем фото URLs если есть
-            if car_data.get('photo_urls'):
-                context.user_data[f"photo_data_{update.message.message_id}"] = car_data['photo_urls']
-            
-            # Сохраняем ссылку на скачивание фото для IOPaint
-            if car_data.get('photo_download_url') and car_data['photo_download_url'] != "COLLECT_PHOTOS":
-                context.user_data[f"photo_url_{update.message.message_id}"] = car_data['photo_download_url']
-            
-            # Отправляем результат (НЕ редактируем статусное сообщение)
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=result_text,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True
-            )
-            
-        except Exception as e:
-            logger.error(f"Ошибка обработки URL: {e}")
-            await status_message.edit_text(f"❌ Ошибка: {str(e)}", parse_mode='Markdown')
+
+        # Добавляем в очередь
+        await self.url_queue.put({
+            'url': url,
+            'update': update,
+            'context': context
+        })
+
+        queue_size = self.url_queue.qsize()
+
+        if queue_size == 1 and not self.is_processing:
+            await update.message.reply_text("✅ Начинаю обработку...")
+        else:
+            await update.message.reply_text(f"✅ Добавлено в очередь (позиция: {queue_size})")
+
+        # Запускаем обработчик очереди, если он не запущен
+        if not self.is_processing:
+            asyncio.create_task(self.process_queue())
+
+    async def process_queue(self):
+        """Обработчик очереди URL"""
+        if self.is_processing:
+            return
+
+        self.is_processing = True
+        logger.info("🚀 Запущен обработчик очереди")
+
+        while not self.url_queue.empty():
+            try:
+                # Получаем задачу из очереди
+                task = await self.url_queue.get()
+                url = task['url']
+                update = task['update']
+                context = task['context']
+
+                logger.info(f"📋 Обрабатываю URL из очереди: {url}")
+
+                # Показываем статус "печатает"
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
+                # Отправляем сообщение о начале парсинга
+                status_message = await update.message.reply_text("⏳ Парсинг данных...", parse_mode='Markdown')
+
+                try:
+                    # Парсим данные
+                    car_data = self.parser.parse_car_data(url)
+
+                    # Обновляем статус
+                    await status_message.edit_text("📊 Обработка данных...", parse_mode='Markdown')
+
+                    # Форматируем результат
+                    result_text = self.parser.format_car_data(car_data)
+
+                    # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО
+                    cleaned_zip = None
+                    cleaned_photos_paths = None
+
+                    if car_data.get('photo_download_url') and car_data['photo_download_url'] != "COLLECT_PHOTOS":
+                        await status_message.edit_text("🎨 Очистка фото от водяных знаков...\n\n[░░░░░░░░░░░░░░░░░░░░] 0%")
+
+                        photo_url = car_data['photo_download_url']
+                        result = await self.parser.download_and_process_photos(
+                            photo_url,
+                            bot=context.bot,
+                            chat_id=update.effective_chat.id,
+                            progress_message=status_message
+                        )
+
+                        if result:
+                            cleaned_zip, cleaned_photos_paths = result
+                            logger.info(f"✅ Фото очищены ({len(cleaned_photos_paths)} шт.)")
+
+                    # Создаем кнопки
+                    keyboard = [
+                        [InlineKeyboardButton("📥 Скачать TXT", callback_data=f"download_txt_{update.message.message_id}")],
+                        [InlineKeyboardButton("✨ Генерировать продающее описание", callback_data=f"generate_description_{update.message.message_id}")]
+                    ]
+
+                    # Добавляем кнопку скачивания фото
+                    if car_data.get('photo_download_url'):
+                        if car_data['photo_download_url'] == "COLLECT_PHOTOS":
+                            # Вторая версия - собираем фото через бота
+                            keyboard.append([InlineKeyboardButton("📷 Скачать все фото", callback_data=f"download_photos_{update.message.message_id}")])
+                        else:
+                            # Первая версия - фото УЖЕ очищены, просто скачиваем
+                            if cleaned_zip:
+                                keyboard.append([InlineKeyboardButton("📷 Скачать очищенные фото", callback_data=f"download_ready_photos_{update.message.message_id}")])
+
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    # Сохраняем данные для скачивания и генерации описания
+                    context.user_data[f"car_data_{update.message.message_id}"] = result_text
+                    context.user_data[f"car_full_data_{update.message.message_id}"] = car_data
+
+                    # Сохраняем фото URLs если есть (вторая версия)
+                    if car_data.get('photo_urls'):
+                        context.user_data[f"photo_data_{update.message.message_id}"] = car_data['photo_urls']
+
+                    # Сохраняем ОЧИЩЕННЫЕ фото если есть
+                    if cleaned_zip and cleaned_photos_paths:
+                        context.user_data[f"cleaned_zip_{update.message.message_id}"] = cleaned_zip
+                        context.user_data[f"cleaned_photos_{update.message.message_id}"] = cleaned_photos_paths
+
+                        # Сохраняем путь к временной директории для очистки
+                        if cleaned_photos_paths:
+                            temp_dir = os.path.dirname(os.path.dirname(cleaned_photos_paths[0]))
+                            context.user_data[f"temp_dir_{update.message.message_id}"] = temp_dir
+
+                    # Отправляем результат
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=result_text,
+                        reply_markup=reply_markup,
+                        disable_web_page_preview=True
+                    )
+
+                    # Удаляем статусное сообщение
+                    try:
+                        await status_message.delete()
+                    except:
+                        pass
+
+                except Exception as e:
+                    logger.error(f"Ошибка обработки URL: {e}")
+                    await status_message.edit_text(f"❌ Ошибка: {str(e)}", parse_mode='Markdown')
+
+                # Помечаем задачу как выполненную
+                self.url_queue.task_done()
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка в обработчике очереди: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+
+        self.is_processing = False
+        logger.info("✅ Обработчик очереди завершён")
     
     async def handle_download(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик кнопки скачивания"""
@@ -1109,7 +1190,85 @@ class TelegramBot:
                     chat_id=query.message.chat_id,
                     text="❌ Данные фото не найдены или устарели"
                 )
-        
+
+        elif callback_data.startswith('download_ready_photos_'):
+            # Скачивание УЖЕ ГОТОВЫХ очищенных фото (без повторной обработки)
+            message_id = callback_data.split('_')[3]
+            cleaned_zip_key = f"cleaned_zip_{message_id}"
+            cleaned_photos_key = f"cleaned_photos_{message_id}"
+            temp_dir_key = f"temp_dir_{message_id}"
+
+            if cleaned_zip_key in context.user_data and cleaned_photos_key in context.user_data:
+                cleaned_zip = context.user_data[cleaned_zip_key]
+                cleaned_photos_paths = context.user_data[cleaned_photos_key]
+
+                # Отправляем фото альбомом
+                if cleaned_photos_paths:
+                    try:
+                        logger.info(f"📤 Отправка {len(cleaned_photos_paths)} очищенных фото (максимум 10 в альбоме)")
+
+                        # Создаем список медиа файлов (максимум 10 в альбоме)
+                        media_group = []
+                        for idx, photo_path in enumerate(cleaned_photos_paths[:config.TELEGRAM_MEDIA_GROUP_LIMIT]):
+                            try:
+                                # Проверяем что файл существует
+                                if not os.path.exists(photo_path):
+                                    logger.warning(f"⚠️ Файл не найден: {photo_path}")
+                                    continue
+
+                                # Читаем файл
+                                with open(photo_path, 'rb') as photo_file:
+                                    photo_bytes = photo_file.read()
+                                    media_group.append(InputMediaPhoto(media=photo_bytes))
+                                    logger.info(f"✅ Добавлено фото {idx + 1}/{min(len(cleaned_photos_paths), config.TELEGRAM_MEDIA_GROUP_LIMIT)}")
+                            except Exception as e:
+                                logger.error(f"❌ Ошибка чтения фото {photo_path}: {e}")
+                                continue
+
+                        if media_group:
+                            logger.info(f"📨 Отправка медиа-группы из {len(media_group)} фото...")
+                            await context.bot.send_media_group(
+                                chat_id=query.message.chat_id,
+                                media=media_group
+                            )
+                            logger.info("✅ Медиа-группа отправлена")
+                        else:
+                            logger.error("❌ Нет фото для отправки")
+                            await context.bot.send_message(
+                                chat_id=query.message.chat_id,
+                                text="❌ Не удалось загрузить обработанные фото"
+                            )
+
+                        # Если фото больше 10, отправляем уведомление
+                        if len(cleaned_photos_paths) > config.TELEGRAM_MEDIA_GROUP_LIMIT:
+                            await context.bot.send_message(
+                                chat_id=query.message.chat_id,
+                                text=f"ℹ️ Показаны первые {config.TELEGRAM_MEDIA_GROUP_LIMIT} фото из {len(cleaned_photos_paths)}"
+                            )
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка отправки медиа-группы: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        await context.bot.send_message(
+                            chat_id=query.message.chat_id,
+                            text=f"❌ Ошибка отправки фото: {str(e)[:200]}"
+                        )
+
+                # Предлагаем скачать ZIP
+                keyboard = [[InlineKeyboardButton("📦 Скачать ZIP архив", callback_data=f"download_zip_{message_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="✅ Фото отправлены!",
+                    reply_markup=reply_markup
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="❌ Очищенные фото не найдены или устарели"
+                )
+
         elif callback_data.startswith('download_zip_'):
             # Скачивание ZIP архива с очищенными фото
             message_id = callback_data.split('_')[2]
