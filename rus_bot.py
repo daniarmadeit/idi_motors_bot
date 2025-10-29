@@ -153,34 +153,27 @@ class BeForwardParser:
 
             logger.info("✅ Найдено модальное окно с ценами")
 
-            # Ищем выбранную строку (selected) - это должен быть DAR ES SALAAM RORO
-            selected_row = modal.select_one('tr.fn-destination-price-row-bg-selected')
+            # Ищем ЯЧЕЙКУ с классом destination-selected (это выбранный порт по умолчанию)
+            selected_cell = modal.select_one('td.destination-selected')
 
-            if selected_row:
-                logger.info("✅ Найдена выбранная строка (selected)")
+            if selected_cell:
+                logger.info("✅ Найдена выбранная ячейка (destination-selected)")
 
-                # Проверяем что это DAR ES SALAAM
-                city_text = selected_row.get_text()
-                if 'DAR ES SALAAM' in city_text.upper():
-                    logger.info("✅ Выбранный город: DAR ES SALAAM")
+                # Ищем span с ценой в этой ячейке
+                price_span = selected_cell.select_one('span.fn-total-price-display')
 
-                    # Ищем цену в этой строке
-                    price_span = selected_row.select_one('span.fn-total-price-display')
+                if price_span:
+                    price_text = price_span.get_text(strip=True)
+                    logger.info(f"💰 Найдена цена в выбранной ячейке: '{price_text}'")
 
-                    if price_span:
-                        price_text = price_span.get_text(strip=True)
-                        logger.info(f"💰 Найдена цена: '{price_text}'")
-
-                        # Удаляем &nbsp; и лишние пробелы
-                        price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
-                        logger.info(f"✨ Очищенная цена: '{price_text}'")
-                        return price_text
-                    else:
-                        logger.warning("⚠️ Не найден span с ценой в выбранной строке")
+                    # Удаляем &nbsp; и лишние пробелы
+                    price_text = price_text.replace('\xa0', '').replace('&nbsp;', '').replace(' ', '')
+                    logger.info(f"✨ Очищенная цена: '{price_text}'")
+                    return price_text
                 else:
-                    logger.warning(f"⚠️ Выбранный город не DAR ES SALAAM: {city_text[:100]}")
+                    logger.warning("⚠️ Не найден span с ценой в выбранной ячейке")
             else:
-                logger.warning("⚠️ Не найдена выбранная строка (selected)")
+                logger.warning("⚠️ Не найдена выбранная ячейка (destination-selected)")
 
             # Fallback: ищем через input с data-port="DAR ES SALAAM"
             logger.info("🔄 Ищем input с data-port='DAR ES SALAAM'...")
