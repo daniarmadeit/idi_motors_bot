@@ -43,6 +43,17 @@ class BeForwardParser:
         """Инициализация парсера"""
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': config.USER_AGENT})
+
+        # Настройка connection pooling для ускорения повторных запросов
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=3,
+            pool_block=False
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+
         self.excluded_keywords = config.EXCLUDED_FIELDS
 
         # Инициализация OpenAI
@@ -792,12 +803,17 @@ class BeForwardParser:
                     logger.warning(f"⚠️ Не удалось обновить статус скачивания: {e}")
 
             # Выполняем синхронный HTTP запрос в executor
+            download_start = time.time()
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
                 lambda: self.session.get(photo_download_url, timeout=config.PHOTO_DOWNLOAD_TIMEOUT)
             )
             response.raise_for_status()
+            download_time = time.time() - download_start
+
+            file_size_mb = len(response.content) / (1024 * 1024)
+            logger.info(f"⏱️ Скачано {file_size_mb:.2f} MB за {download_time:.1f} сек ({file_size_mb/download_time:.2f} MB/s)")
 
             with open(zip_path, 'wb') as f:
                 f.write(response.content)
