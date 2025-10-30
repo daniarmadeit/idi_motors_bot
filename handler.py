@@ -1,6 +1,6 @@
 """
 RunPod Serverless Worker - только обработка фото
-Принимает список URL фото → очищает через IOPaint → возвращает ZIP
+Принимает список base64 фото → очищает через IOPaint → возвращает ZIP
 """
 import asyncio
 import base64
@@ -15,7 +15,7 @@ import zipfile
 
 import requests
 import runpod
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # Настройка логирования
 logging.basicConfig(
@@ -24,8 +24,79 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Константы (из config.py)
 IOPAINT_URL = "http://127.0.0.1:8080"
+IOPAINT_INPAINT_ENDPOINT = "/api/v1/inpaint"
+WATERMARK_WIDTH = 300
+WATERMARK_HEIGHT = 30
+INPAINT_TIMEOUT = 120
+
 iopaint_process = None
+
+
+def create_watermark_mask(img_width: int, img_height: int) -> Image.Image:
+    """Создает маску для удаления водяного знака BeForward (внизу по центру)"""
+    mask = Image.new('L', (img_width, img_height), 0)
+    draw = ImageDraw.Draw(mask)
+
+    x1 = (img_width - WATERMARK_WIDTH) // 2
+    y1 = img_height - WATERMARK_HEIGHT
+    x2 = x1 + WATERMARK_WIDTH
+    y2 = img_height
+
+    draw.rectangle([x1, y1, x2, y2], fill=255)
+    return mask
+
+
+def image_to_base64(img: Image.Image) -> str:
+    """Конвертирует изображение в base64"""
+    buffer = io.BytesIO()
+    if img.mode == 'RGBA':
+        img = img.convert('RGB')
+    img.save(buffer, format='PNG')
+    return base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+
+def remove_watermark(img: Image.Image) -> Image.Image:
+    """Удаляет водяной знак с изображения через IOPaint"""
+    try:
+        img_width, img_height = img.size
+
+        # Конвертируем изображение и маску в base64
+        img_base64 = image_to_base64(img)
+        mask = create_watermark_mask(img_width, img_height)
+        mask_base64 = image_to_base64(mask)
+
+        # Отправляем в IOPaint
+        payload = {
+            'image': img_base64,
+            'mask': mask_base64,
+            'ldmSampler': 'plms',
+            'hdStrategy': 'Original',
+        }
+
+        response = requests.post(
+            f"{IOPAINT_URL}{IOPAINT_INPAINT_ENDPOINT}",
+            json=payload,
+            timeout=INPAINT_TIMEOUT
+        )
+
+        if response.status_code != 200:
+            logger.error(f"❌ Ошибка IOPaint: HTTP {response.status_code}")
+            logger.error(f"Response: {response.text[:500]}")
+            return img  # Возвращаем оригинал при ошибке
+
+        # IOPaint API возвращает изображение напрямую в виде байтов
+        result_bytes = response.content
+        logger.info(f"✅ Получено {len(result_bytes)} байт от IOPaint")
+
+        return Image.open(io.BytesIO(result_bytes))
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления watermark: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return img  # Возвращаем оригинал при ошибке
 
 
 def start_iopaint():
@@ -73,45 +144,23 @@ def process_photos(photo_data_list: list) -> bytes:
     try:
         for idx, photo_base64 in enumerate(photo_data_list):
             try:
-                logger.info(f"📥 Декодирую фото {idx + 1}/{len(photo_data_list)}")
-                logger.info(f"📊 Размер base64 строки: {len(photo_base64)} символов")
+                logger.info(f"📥 Обработка фото {idx + 1}/{len(photo_data_list)}")
 
-                # Декодируем base64 в байты
+                # Декодируем base64 в изображение
                 photo_bytes = base64.b64decode(photo_base64)
-                logger.info(f"📊 Размер декодированного фото: {len(photo_bytes)} байт")
-
-                # Сохраняем оригинал
                 img = Image.open(io.BytesIO(photo_bytes))
-                logger.info(f"📊 Размер изображения: {img.size}, формат: {img.format}")
-                original_path = os.path.join(temp_dir, f"photo_{idx:03d}.jpg")
-                img.save(original_path)
-                logger.info(f"💾 Сохранено: {original_path}")
+                logger.info(f"📊 Размер изображения: {img.size}")
 
-                # Очищаем через IOPaint
-                logger.info(f"🧹 Очистка фото {idx + 1}...")
+                # Удаляем водяной знак через IOPaint
+                logger.info(f"🧹 Удаление watermark...")
+                cleaned_img = remove_watermark(img)
 
-                with open(original_path, 'rb') as f:
-                    files = {'image': f}
-                    data = {'model': 'lama'}
+                # Сохраняем очищенное фото
+                cleaned_path = os.path.join(temp_dir, f"cleaned_{idx:03d}.jpg")
+                cleaned_img.save(cleaned_path, 'JPEG', quality=95)
+                cleaned_photos.append(cleaned_path)
 
-                    logger.info(f"📡 Отправка запроса к IOPaint: {IOPAINT_URL}/api/v1/inpaint")
-                    iopaint_response = requests.post(
-                        f"{IOPAINT_URL}/api/v1/inpaint",
-                        files=files,
-                        data=data,
-                        timeout=120
-                    )
-
-                    logger.info(f"📡 IOPaint ответ: статус {iopaint_response.status_code}, размер {len(iopaint_response.content)} байт")
-
-                    if iopaint_response.status_code == 200:
-                        cleaned_path = os.path.join(temp_dir, f"cleaned_{idx:03d}.jpg")
-                        with open(cleaned_path, 'wb') as out:
-                            out.write(iopaint_response.content)
-                        cleaned_photos.append(cleaned_path)
-                        logger.info(f"✅ Фото {idx + 1} очищено: {cleaned_path}")
-                    else:
-                        logger.error(f"❌ Ошибка IOPaint: {iopaint_response.status_code}, body: {iopaint_response.text[:200]}")
+                logger.info(f"✅ Фото {idx + 1} обработано")
 
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки фото {idx + 1}: {e}")
