@@ -41,19 +41,17 @@ def start_iopaint():
         device = "cuda" if os.path.exists("/usr/local/cuda") else "cpu"
         logger.info(f"🖥️ Используется device: {device}")
 
-        # Запускаем IOPaint в фоновом режиме
+        # Запускаем IOPaint в фоновом режиме (НЕ БЛОКИРУЕМ)
         iopaint_process = subprocess.Popen([
             "iopaint", "start",
             "--model=lama",
             f"--device={device}",
             "--port=8080",
             "--host=0.0.0.0"
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        # Ждем 5 секунд для инициализации
-        time.sleep(5)
-
-        logger.info("✅ IOPaint сервер запущен на порту 8080")
+        logger.info("✅ IOPaint сервер запускается в фоне (порт 8080)")
+        logger.info("⏳ IOPaint будет готов через ~30-60 секунд")
 
     except Exception as e:
         logger.error(f"❌ Ошибка запуска IOPaint: {e}")
