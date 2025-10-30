@@ -308,14 +308,10 @@ class BeForwardParser:
         try:
             logger.info("🌐 Загрузка страницы через requests-html...")
 
-            # Создаем новый event loop для этого потока (fix asyncio error)
-            import nest_asyncio
-            nest_asyncio.apply()
-
             session = HTMLSession()
             response = session.get(url, timeout=15)
 
-            # Рендерим JavaScript
+            # Рендерим JavaScript (теперь работает т.к. вызываем в main thread)
             response.html.render(sleep=2, timeout=20)
 
             # Ищем цену в отрендеренном HTML

@@ -154,10 +154,11 @@ class LocalBot:
 
         temp_dir = None  # Для cleanup в finally
         try:
-            # 1. Парсим данные машины (в отдельном потоке, не блокируем event loop)
+            # 1. Парсим данные машины (синхронно - requests-html требует main thread)
             logger.info(f"📋 Парсинг: {url}")
             loop = asyncio.get_event_loop()
-            car_data = await loop.run_in_executor(None, self.parser.parse_car_data, url)
+            # Парсинг быстрый (~6 сек), не критично для event loop
+            car_data = self.parser.parse_car_data(url)
             result_text = self.parser.format_car_data(car_data)
 
             # 2. Получаем список фото
