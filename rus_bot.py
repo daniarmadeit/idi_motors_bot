@@ -304,20 +304,28 @@ class BeForwardParser:
         try:
             logger.info("🌐 Загрузка страницы через Playwright...")
 
-            # Запускаем async функцию через asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(self._fetch_price_with_playwright(url))
+            # Запускаем в отдельном потоке, чтобы избежать конфликта event loops
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(self._run_playwright_in_thread, url)
+                result = future.result(timeout=30)
                 return result
-            finally:
-                loop.close()
 
         except Exception as e:
             logger.error(f"❌ Ошибка Playwright: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return None
+
+    def _run_playwright_in_thread(self, url: str) -> Optional[str]:
+        """Запускает Playwright в отдельном потоке с новым event loop"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(self._fetch_price_with_playwright(url))
+            return result
+        finally:
+            loop.close()
 
     async def _fetch_price_with_playwright(self, url: str) -> Optional[str]:
         """Async метод для Playwright парсинга"""
