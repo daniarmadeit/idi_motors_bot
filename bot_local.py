@@ -159,17 +159,23 @@ class LocalBot:
             loop = asyncio.get_event_loop()
             # Парсинг быстрый (~6 сек), не критично для event loop
             car_data = self.parser.parse_car_data(url)
+            logger.info(f"✅ parse_car_data завершён")
+
             result_text = self.parser.format_car_data(car_data)
+            logger.info(f"✅ format_car_data завершён")
 
             # 2. Получаем список фото
             photo_download_url = car_data.get('photo_download_url')
+            logger.info(f"📸 Photo download URL: {photo_download_url}")
 
             if not photo_download_url or photo_download_url == "COLLECT_PHOTOS":
                 # Нет фото - просто отправляем данные
+                logger.info("⚠️ Нет фото, отправляю только данные")
                 await status_msg.edit_text(result_text, disable_web_page_preview=True)
                 return
 
             # 3. Скачиваем фото через парсер (в отдельном потоке)
+            logger.info(f"📥 Начинаю скачивание фото...")
             try:
                 photo_paths, temp_dir = await loop.run_in_executor(
                     None,
