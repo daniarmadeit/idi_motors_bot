@@ -21,3 +21,4 @@ python rus_bot.py
 
 pause
 
+

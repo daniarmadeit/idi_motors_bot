@@ -15,3 +15,5 @@ openai==1.54.0
 # Environment variables
 python-dotenv==1.0.0
 
+# RunPod serverless
+runpod==1.7.0

@@ -12,7 +12,16 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nUpdate OpenAI prompt for Facebook sales posts with IDI MOTORS branding\n\n- Changed prompt structure to generate professional Facebook posts\n- Added IDI MOTORS company branding and contact information\n- Included shipping details (Japan to Africa)\n- Added contact number: +260970100101\n- Updated post format with emojis and clear pricing\n- Added relevant hashtags for Zambia/Lusaka market\n- Removed \"Продающее описание\" header from bot response\n- Fixed Telegram Markdown parsing errors\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd systemd deployment configuration and automation\n\nFeatures:\n- Created systemd service files for IOPaint and RusBot\n- Added automatic deployment script (deploy.sh)\n- Added comprehensive deployment documentation (DEPLOYMENT.md)\n- Updated .gitignore for production environment\n- Increased OpenAI timeout from 30s to 60s for slow networks\n- Added Unicode bold character support in OpenAI prompts\n\nDeployment files:\n- systemd/iopaint.service - IOPaint HTTP server service\n- systemd/rusbot.service - Telegram bot service\n- deploy.sh - One-command automatic deployment script\n- DEPLOYMENT.md - Complete deployment guide\n\nService features:\n- Auto-restart on failure\n- Logs to systemd journal\n- Auto-start on boot\n- Service dependencies (bot requires IOPaint)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nClean up repository - remove deployment guides and update dependencies\n\n- Remove deployment documentation files (DEPLOYMENT.md, DEPLOY_COMMANDS.md, QUICK_START.md, README.md, REFACTORING_NOTES.md)\n- Remove deployment scripts (deploy.sh) and systemd service files\n- Add missing Pillow dependency to requirements.txt\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(venvScriptspython.exe test_price_parser.py)",
+      "Bash(venv/Scripts/python.exe:*)",
+      "Bash(venv/Scripts/pip.exe install:*)",
+      "Bash(dir:*)",
+      "Bash(rm:*)",
+      "Bash(docker build:*)",
+      "Bash(where:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

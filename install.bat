@@ -45,3 +45,4 @@ echo   2. python rus_bot.py
 echo.
 pause
 
+
