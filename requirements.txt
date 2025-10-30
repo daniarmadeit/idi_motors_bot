@@ -2,15 +2,15 @@
 python-telegram-bot==20.7
 
 # Web scraping
-beautifulsoup4==4.12.2
-requests==2.31.0
-selenium==4.16.0
+beautifulsoup4
+requests
+selenium
 
 # Image processing & AI
-iopaint==1.6.0
+iopaint
 
 # Environment variables
-python-dotenv==1.0.0
+python-dotenv
 
 # RunPod serverless
-runpod==1.6.2
+runpod
