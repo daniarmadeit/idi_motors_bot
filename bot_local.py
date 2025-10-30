@@ -173,9 +173,12 @@ class LocalBot:
             result = runpod_response.json()
             logger.info(f"RunPod result keys: {result.keys()}")
 
-            if result.get("status") == "success":
+            # RunPod возвращает {"status": "COMPLETED", "output": {...}}
+            output = result.get("output", {})
+
+            if output.get("status") == "success":
                 # Получаем ZIP с очищенными фото
-                zip_base64 = result.get("zip_base64")
+                zip_base64 = output.get("zip_base64")
                 zip_bytes = base64.b64decode(zip_base64)
 
                 logger.info(f"✅ Получен ZIP ({len(zip_bytes)} байт)")
@@ -194,7 +197,7 @@ class LocalBot:
                 logger.info("✅ Обработка завершена")
 
             else:
-                error = result.get("error", "Unknown error")
+                error = output.get("error", result.get("error", "Unknown error"))
                 logger.error(f"RunPod error: {error}")
                 await status_msg.edit_text(
                     result_text + f"\n\n❌ Ошибка: {error}",
