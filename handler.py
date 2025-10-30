@@ -111,9 +111,9 @@ def upscale_image(img: Image.Image) -> Image.Image:
         img_base64 = image_to_base64(img)
 
         payload = {
-            'image': img_base64,
             'name': 'RealESRGAN',
-            'upscale': UPSCALE_FACTOR
+            'image': img_base64,
+            'model': 'realesr-general-x4v3'
         }
 
         response = requests.post(
