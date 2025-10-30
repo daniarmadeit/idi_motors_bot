@@ -160,6 +160,7 @@ class LocalBot:
             )
 
             logger.info(f"RunPod ответ: {runpod_response.status_code}")
+            logger.info(f"RunPod body: {runpod_response.text[:500]}")  # Первые 500 символов
 
             if runpod_response.status_code != 200:
                 logger.error(f"RunPod error: {runpod_response.text}")
@@ -170,6 +171,7 @@ class LocalBot:
                 return
 
             result = runpod_response.json()
+            logger.info(f"RunPod result keys: {result.keys()}")
 
             if result.get("status") == "success":
                 # Получаем ZIP с очищенными фото
