@@ -154,11 +154,13 @@ class LocalBot:
 
         temp_dir = None  # Для cleanup в finally
         try:
-            # 1. Парсим данные машины (синхронно - requests-html требует main thread)
+            # 1. Парсим данные машины (в отдельном потоке - не блокируем event loop)
             logger.info(f"📋 Парсинг: {url}")
             loop = asyncio.get_event_loop()
-            # Парсинг быстрый (~6 сек), не критично для event loop
-            car_data = self.parser.parse_car_data(url)
+
+            # Запускаем парсинг в отдельном потоке чтобы не блокировать event loop
+            # (Playwright внутри уже работает в потоке, но сам parse_car_data синхронный)
+            car_data = await loop.run_in_executor(None, self.parser.parse_car_data, url)
             logger.info(f"✅ parse_car_data завершён")
 
             result_text = self.parser.format_car_data(car_data)
