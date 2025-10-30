@@ -40,6 +40,8 @@ class LocalBot:
         self.token = token
         self.parser = BeForwardParser()
         self.application = None
+        self.url_queue = asyncio.Queue(maxsize=20)  # Очередь до 20 URL
+        self.is_processing = False
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start"""
@@ -54,7 +56,7 @@ class LocalBot:
         await update.message.reply_text(welcome_text)
 
     async def handle_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик URL BeForward"""
+        """Обработчик URL - добавляет в очередь"""
         url = update.message.text.strip()
 
         if 'beforward.jp' not in url.lower():
@@ -63,7 +65,57 @@ class LocalBot:
             )
             return
 
-        status_msg = await update.message.reply_text("⏳ Парсинг данных...")
+        # Создаем статусное сообщение
+        status_msg = await update.message.reply_text("⏳ В очереди на обработку...")
+
+        # Добавляем в очередь
+        await self.url_queue.put({
+            'url': url,
+            'update': update,
+            'context': context,
+            'status_msg': status_msg
+        })
+
+        # Запускаем обработчик очереди, если не запущен
+        if not self.is_processing:
+            asyncio.create_task(self.process_queue())
+
+    async def process_queue(self):
+        """Обработчик очереди URL"""
+        if self.is_processing:
+            return
+
+        self.is_processing = True
+        logger.info("🚀 Запущен обработчик очереди")
+
+        while not self.url_queue.empty():
+            try:
+                # Получаем задачу из очереди
+                task = await self.url_queue.get()
+                url = task['url']
+                update = task['update']
+                context = task['context']
+                status_msg = task['status_msg']
+
+                logger.info(f"📋 Обрабатываю URL из очереди: {url}")
+
+                # Обрабатываем
+                await self._process_url(url, update, context, status_msg)
+
+                # Помечаем как выполненную
+                self.url_queue.task_done()
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка в обработчике очереди: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+
+        self.is_processing = False
+        logger.info("✅ Обработчик очереди завершён")
+
+    async def _process_url(self, url: str, update: Update, context: ContextTypes.DEFAULT_TYPE, status_msg):
+        """Обработка одного URL"""
+        await status_msg.edit_text("⏳ Парсинг данных...")
 
         try:
             # 1. Парсим данные машины
