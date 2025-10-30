@@ -1,21 +1,21 @@
 """
-RunPod Serverless Handler для BeForward Parser Bot
-Принимает webhook запросы от Telegram и обрабатывает их
+RunPod Serverless Worker - только обработка фото
+Принимает список URL фото → очищает через IOPaint → возвращает ZIP
 """
 import asyncio
-import json
+import base64
+import glob
+import io
 import logging
 import os
-import sys
 import subprocess
+import tempfile
 import time
+import zipfile
 
+import requests
 import runpod
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-
-import config
-from rus_bot import TelegramBot, BeForwardParser
+from PIL import Image
 
 # Настройка логирования
 logging.basicConfig(
@@ -24,9 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Глобальные переменные для переиспользования между вызовами
-bot_instance = None
-application = None
+IOPAINT_URL = "http://127.0.0.1:8080"
 iopaint_process = None
 
 
@@ -37,11 +35,9 @@ def start_iopaint():
     try:
         logger.info("🎨 Запуск IOPaint сервера...")
 
-        # Определяем device (cuda если доступен, иначе cpu)
         device = "cuda" if os.path.exists("/usr/local/cuda") else "cpu"
         logger.info(f"🖥️ Используется device: {device}")
 
-        # Запускаем IOPaint в фоновом режиме (НЕ БЛОКИРУЕМ)
         iopaint_process = subprocess.Popen([
             "iopaint", "start",
             "--model=lama",
@@ -50,78 +46,130 @@ def start_iopaint():
             "--host=0.0.0.0"
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        logger.info("✅ IOPaint сервер запускается в фоне (порт 8080)")
-        logger.info("⏳ IOPaint будет готов через ~30-60 секунд")
+        # Ждем запуска
+        time.sleep(10)
+        logger.info("✅ IOPaint сервер запущен")
 
     except Exception as e:
         logger.error(f"❌ Ошибка запуска IOPaint: {e}")
         raise
 
 
-def initialize_bot():
-    """Инициализация бота (вызывается один раз при холодном старте)"""
-    global bot_instance, application
-
-    if not config.BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN не установлен")
-        raise ValueError("BOT_TOKEN is required")
-
-    logger.info("🔧 Инициализация бота...")
-
-    # Запускаем IOPaint сервер
-    start_iopaint()
-
-    # Создаем экземпляр парсера и бота
-    bot_instance = TelegramBot(config.BOT_TOKEN)
-
-    # Настраиваем Application для webhook режима
-    application = Application.builder().token(config.BOT_TOKEN).build()
-
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", bot_instance.start_command))
-    application.add_handler(CommandHandler("restart", bot_instance.restart_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_instance.handle_url))
-    application.add_handler(CallbackQueryHandler(bot_instance.handle_download, pattern="^(download_|generate_)"))
-    application.add_error_handler(bot_instance.error_handler)
-
-    # Инициализируем application
-    asyncio.run(application.initialize())
-
-    logger.info("✅ Бот инициализирован")
-
-    return application
-
-
-async def process_update(update_data: dict):
+def process_photos(photo_urls: list) -> bytes:
     """
-    Обрабатывает одно обновление от Telegram
+    Обрабатывает список фото через IOPaint
 
     Args:
-        update_data: JSON данные от Telegram webhook
+        photo_urls: Список URL фото
 
     Returns:
-        dict: Результат обработки
+        bytes: ZIP архив с очищенными фото
     """
-    global application
+    logger.info(f"🎨 Обработка {len(photo_urls)} фото...")
+
+    temp_dir = tempfile.mkdtemp()
+    cleaned_photos = []
 
     try:
-        # Преобразуем JSON в Update объект
-        update = Update.de_json(update_data, application.bot)
+        for idx, photo_url in enumerate(photo_urls):
+            try:
+                logger.info(f"📥 Скачиваю фото {idx + 1}/{len(photo_urls)}")
 
-        if not update:
-            logger.warning("⚠️ Пустое обновление")
-            return {"status": "ignored", "reason": "empty update"}
+                # Скачиваем фото
+                response = requests.get(photo_url, timeout=30)
+                response.raise_for_status()
 
-        logger.info(f"📨 Получено обновление: {update.update_id}")
+                # Сохраняем оригинал
+                img = Image.open(io.BytesIO(response.content))
+                original_path = os.path.join(temp_dir, f"photo_{idx:03d}.jpg")
+                img.save(original_path)
 
-        # Обрабатываем обновление через application
-        await application.process_update(update)
+                # Очищаем через IOPaint
+                logger.info(f"🧹 Очистка фото {idx + 1}...")
 
-        logger.info(f"✅ Обновление {update.update_id} обработано")
+                with open(original_path, 'rb') as f:
+                    files = {'image': f}
+                    data = {'model': 'lama'}
+
+                    iopaint_response = requests.post(
+                        f"{IOPAINT_URL}/api/v1/inpaint",
+                        files=files,
+                        data=data,
+                        timeout=120
+                    )
+
+                    if iopaint_response.status_code == 200:
+                        cleaned_path = os.path.join(temp_dir, f"cleaned_{idx:03d}.jpg")
+                        with open(cleaned_path, 'wb') as out:
+                            out.write(iopaint_response.content)
+                        cleaned_photos.append(cleaned_path)
+                        logger.info(f"✅ Фото {idx + 1} очищено")
+                    else:
+                        logger.error(f"❌ Ошибка IOPaint: {iopaint_response.status_code}")
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка обработки фото {idx + 1}: {e}")
+                continue
+
+        # Создаем ZIP архив
+        logger.info(f"📦 Создание ZIP архива из {len(cleaned_photos)} фото...")
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for photo_path in cleaned_photos:
+                zip_file.write(photo_path, os.path.basename(photo_path))
+
+        zip_buffer.seek(0)
+        zip_bytes = zip_buffer.read()
+
+        logger.info(f"✅ ZIP архив создан ({len(zip_bytes)} байт)")
+        return zip_bytes
+
+    finally:
+        # Очистка временных файлов
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def handler(event):
+    """
+    RunPod handler - обработка фото
+
+    Input:
+        {
+            "photo_urls": ["url1", "url2", ...]
+        }
+
+    Output:
+        {
+            "status": "success",
+            "zip_base64": "..."  # ZIP архив в base64
+        }
+    """
+    global iopaint_process
+
+    # Запускаем IOPaint при первом запуске
+    if iopaint_process is None:
+        start_iopaint()
+
+    input_data = event.get("input", {})
+    photo_urls = input_data.get("photo_urls", [])
+
+    if not photo_urls:
+        return {"error": "No photo_urls provided"}
+
+    try:
+        # Обрабатываем фото
+        zip_bytes = process_photos(photo_urls)
+
+        # Конвертируем в base64 для передачи
+        zip_base64 = base64.b64encode(zip_bytes).decode('utf-8')
 
         return {
             "status": "success",
-            "update_id": update.update_id
+            "photo_count": len(photo_urls),
+            "zip_base64": zip_base64,
+            "zip_size": len(zip_bytes)
         }
 
     except Exception as e:
@@ -135,69 +183,6 @@ async def process_update(update_data: dict):
         }
 
 
-def handler(event):
-    """
-    RunPod serverless handler
-
-    Args:
-        event: Событие от RunPod с входными данными
-
-    Returns:
-        dict: Результат выполнения
-    """
-    global application
-
-    # Инициализация при первом запуске (холодный старт)
-    if application is None:
-        try:
-            initialize_bot()
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации: {e}")
-            return {
-                "error": f"Initialization failed: {str(e)}"
-            }
-
-    # Получаем входные данные
-    input_data = event.get("input", {})
-
-    # Проверяем тип запроса
-    if "telegram_update" in input_data:
-        # Webhook от Telegram
-        update_data = input_data["telegram_update"]
-
-        # Обрабатываем обновление
-        result = asyncio.run(process_update(update_data))
-
-        return result
-
-    elif "url" in input_data:
-        # Прямой запрос на парсинг URL (для тестирования)
-        url = input_data["url"]
-
-        try:
-            parser = BeForwardParser()
-            car_data = parser.parse_car_data(url)
-            formatted = parser.format_car_data(car_data)
-
-            return {
-                "status": "success",
-                "car_data": car_data,
-                "formatted": formatted
-            }
-        except Exception as e:
-            logger.error(f"❌ Ошибка парсинга: {e}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-
-    else:
-        return {
-            "error": "Invalid input. Expected 'telegram_update' or 'url'"
-        }
-
-
-# Запуск RunPod serverless
 if __name__ == "__main__":
-    logger.info("🚀 Запуск RunPod Serverless Handler")
+    logger.info("🚀 Запуск RunPod Photo Processing Worker")
     runpod.serverless.start({"handler": handler})

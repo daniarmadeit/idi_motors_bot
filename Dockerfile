@@ -30,5 +30,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# RunPod serverless handler (use simple handler for testing)
-CMD ["python", "-u", "handler_simple.py"]
+# RunPod serverless worker - photo processing only
+CMD ["python", "-u", "handler.py"]
