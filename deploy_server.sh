@@ -31,7 +31,7 @@ fi
 echo -e "${YELLOW}🐍 Настройка Python окружения...${NC}"
 sudo python3 -m venv venv
 sudo venv/bin/pip install --upgrade pip
-sudo venv/bin/pip install -r requirements.txt
+sudo venv/bin/pip install -r requirements_bot.txt
 
 # 4. Создание .env.local
 if [ ! -f ".env.local" ]; then

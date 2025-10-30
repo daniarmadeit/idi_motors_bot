@@ -1,0 +1,16 @@
+# Зависимости для bot_local.py (CPU сервер)
+# Без torch, iopaint - они нужны только на RunPod
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Web scraping (для BeForwardParser)
+beautifulsoup4
+requests
+selenium
+
+# Image processing (только Pillow для работы с фото)
+Pillow
+
+# Environment variables
+python-dotenv

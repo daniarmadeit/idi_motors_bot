@@ -1,3 +1,6 @@
+# Полный список зависимостей для RunPod (handler.py + Dockerfile)
+# Для CPU сервера используй requirements_bot.txt (без torch/iopaint)
+
 # Telegram Bot
 python-telegram-bot==20.7
 
@@ -7,6 +10,7 @@ requests
 selenium
 
 # Image processing & AI
+Pillow
 iopaint
 
 # Environment variables
