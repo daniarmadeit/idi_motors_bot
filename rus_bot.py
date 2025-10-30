@@ -27,16 +27,6 @@ try:
 except ImportError:
     REQUESTS_HTML_AVAILABLE = False
 
-try:
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.chrome.options import Options
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
-
 import config
 
 # Настройка логирования
@@ -317,6 +307,11 @@ class BeForwardParser:
         """Извлекает цену используя requests-html (JS-рендеринг, стабильно на серверах)"""
         try:
             logger.info("🌐 Загрузка страницы через requests-html...")
+
+            # Создаем новый event loop для этого потока (fix asyncio error)
+            import nest_asyncio
+            nest_asyncio.apply()
+
             session = HTMLSession()
             response = session.get(url, timeout=15)
 
