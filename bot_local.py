@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 RUNPOD_API_KEY = os.getenv('RUNPOD_API_KEY')
 RUNPOD_ENDPOINT_ID = os.getenv('RUNPOD_ENDPOINT_ID')
-RUNPOD_API_URL = f"https://api.runpod.ai/v2/{RUNPOD_ENDPOINT_ID}/runsync"
+RUNPOD_API_URL = f"https://api.runpod.ai/v2/{RUNPOD_ENDPOINT_ID}/run"
+RUNPOD_STATUS_URL = f"https://api.runpod.ai/v2/{RUNPOD_ENDPOINT_ID}/status"
 
 
 class LocalBot:
@@ -136,8 +137,8 @@ class LocalBot:
             )
 
             # Конвертируем локальные файлы в base64 для отправки
-            # Лимит: 30 фото
-            MAX_PHOTOS = 30
+            # Лимит: 20 фото
+            MAX_PHOTOS = 20
 
             photo_data = []
             for photo_path in photo_paths[:MAX_PHOTOS]:
@@ -147,34 +148,82 @@ class LocalBot:
 
             logger.info(f"🚀 Отправка {len(photo_data)} из {len(photo_paths)} фото на RunPod...")
 
-            # Вызываем RunPod API
-            runpod_response = requests.post(
+            # 1. Запускаем async job
+            run_response = requests.post(
                 RUNPOD_API_URL,
                 json={
                     "input": {
-                        "photo_urls": photo_data  # Отправляем base64 вместо URL
+                        "photo_urls": photo_data
                     }
                 },
                 headers={
                     "Authorization": f"Bearer {RUNPOD_API_KEY}",
                     "Content-Type": "application/json"
                 },
-                timeout=300
+                timeout=30
             )
 
-            logger.info(f"RunPod ответ: {runpod_response.status_code}")
-            logger.info(f"RunPod body: {runpod_response.text[:500]}")  # Первые 500 символов
-
-            if runpod_response.status_code != 200:
-                logger.error(f"RunPod error: {runpod_response.text}")
+            if run_response.status_code != 200:
+                logger.error(f"RunPod error: {run_response.text}")
                 await status_msg.edit_text(
-                    result_text + "\n\n❌ Ошибка обработки фото на сервере",
+                    result_text + "\n\n❌ Ошибка запуска обработки",
                     disable_web_page_preview=True
                 )
                 return
 
-            result = runpod_response.json()
-            logger.info(f"RunPod result keys: {result.keys()}")
+            run_result = run_response.json()
+            job_id = run_result.get("id")
+            logger.info(f"✅ Job создан: {job_id}")
+
+            # 2. Polling результата
+            max_wait = 300  # 5 минут
+            poll_interval = 5  # Проверяем каждые 5 секунд
+            waited = 0
+
+            while waited < max_wait:
+                await asyncio.sleep(poll_interval)
+                waited += poll_interval
+
+                # Обновляем статус для пользователя
+                if waited % 15 == 0:  # Каждые 15 секунд
+                    await status_msg.edit_text(
+                        f"🎨 Обработка {len(photo_data)} фото на GPU...\n"
+                        f"⏱️ Прошло {waited} сек"
+                    )
+
+                # Проверяем статус
+                status_response = requests.get(
+                    f"{RUNPOD_STATUS_URL}/{job_id}",
+                    headers={"Authorization": f"Bearer {RUNPOD_API_KEY}"},
+                    timeout=10
+                )
+
+                if status_response.status_code != 200:
+                    continue
+
+                status_result = status_response.json()
+                job_status = status_result.get("status")
+
+                logger.info(f"📊 Job status: {job_status}")
+
+                if job_status == "COMPLETED":
+                    result = status_result
+                    break
+                elif job_status == "FAILED":
+                    error = status_result.get("error", "Unknown error")
+                    await status_msg.edit_text(
+                        result_text + f"\n\n❌ Ошибка обработки: {error}",
+                        disable_web_page_preview=True
+                    )
+                    return
+
+            else:
+                # Timeout
+                await status_msg.edit_text(
+                    result_text + "\n\n⏱️ Timeout: обработка заняла слишком много времени",
+                    disable_web_page_preview=True
+                )
+                return
 
             # RunPod возвращает {"status": "COMPLETED", "output": {...}}
             output = result.get("output", {})
