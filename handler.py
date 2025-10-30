@@ -74,14 +74,18 @@ def process_photos(photo_data_list: list) -> bytes:
         for idx, photo_base64 in enumerate(photo_data_list):
             try:
                 logger.info(f"📥 Декодирую фото {idx + 1}/{len(photo_data_list)}")
+                logger.info(f"📊 Размер base64 строки: {len(photo_base64)} символов")
 
                 # Декодируем base64 в байты
                 photo_bytes = base64.b64decode(photo_base64)
+                logger.info(f"📊 Размер декодированного фото: {len(photo_bytes)} байт")
 
                 # Сохраняем оригинал
                 img = Image.open(io.BytesIO(photo_bytes))
+                logger.info(f"📊 Размер изображения: {img.size}, формат: {img.format}")
                 original_path = os.path.join(temp_dir, f"photo_{idx:03d}.jpg")
                 img.save(original_path)
+                logger.info(f"💾 Сохранено: {original_path}")
 
                 # Очищаем через IOPaint
                 logger.info(f"🧹 Очистка фото {idx + 1}...")
@@ -90,6 +94,7 @@ def process_photos(photo_data_list: list) -> bytes:
                     files = {'image': f}
                     data = {'model': 'lama'}
 
+                    logger.info(f"📡 Отправка запроса к IOPaint: {IOPAINT_URL}/api/v1/inpaint")
                     iopaint_response = requests.post(
                         f"{IOPAINT_URL}/api/v1/inpaint",
                         files=files,
@@ -97,31 +102,40 @@ def process_photos(photo_data_list: list) -> bytes:
                         timeout=120
                     )
 
+                    logger.info(f"📡 IOPaint ответ: статус {iopaint_response.status_code}, размер {len(iopaint_response.content)} байт")
+
                     if iopaint_response.status_code == 200:
                         cleaned_path = os.path.join(temp_dir, f"cleaned_{idx:03d}.jpg")
                         with open(cleaned_path, 'wb') as out:
                             out.write(iopaint_response.content)
                         cleaned_photos.append(cleaned_path)
-                        logger.info(f"✅ Фото {idx + 1} очищено")
+                        logger.info(f"✅ Фото {idx + 1} очищено: {cleaned_path}")
                     else:
-                        logger.error(f"❌ Ошибка IOPaint: {iopaint_response.status_code}")
+                        logger.error(f"❌ Ошибка IOPaint: {iopaint_response.status_code}, body: {iopaint_response.text[:200]}")
 
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки фото {idx + 1}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 continue
 
         # Создаем ZIP архив
         logger.info(f"📦 Создание ZIP архива из {len(cleaned_photos)} фото...")
+
+        if not cleaned_photos:
+            logger.warning(f"⚠️ Нет очищенных фото для архивации! Обработано 0 из {len(photo_data_list)}")
+
         zip_buffer = io.BytesIO()
 
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for photo_path in cleaned_photos:
+                logger.info(f"📦 Добавление в архив: {photo_path}")
                 zip_file.write(photo_path, os.path.basename(photo_path))
 
         zip_buffer.seek(0)
         zip_bytes = zip_buffer.read()
 
-        logger.info(f"✅ ZIP архив создан ({len(zip_bytes)} байт)")
+        logger.info(f"✅ ZIP архив создан ({len(zip_bytes)} байт), файлов в архиве: {len(cleaned_photos)}")
         return zip_bytes
 
     finally:
