@@ -7,8 +7,7 @@ python-telegram-bot==20.7
 # Web scraping (для BeForwardParser)
 beautifulsoup4
 requests
-requests-html
-nest-asyncio
+playwright
 
 # Image processing (только Pillow для работы с фото)
 Pillow

@@ -22,10 +22,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ChatAction
 
 try:
-    from requests_html import AsyncHTMLSession
-    REQUESTS_HTML_AVAILABLE = True
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
 except ImportError:
-    REQUESTS_HTML_AVAILABLE = False
+    PLAYWRIGHT_AVAILABLE = False
 
 import config
 
@@ -224,21 +224,17 @@ class BeForwardParser:
         return f'{url}?{country_param}'
     
     def _extract_lusaka_price(self, url: str) -> Optional[str]:
-        """Извлекает цену для DAR ES SALAAM используя JS-рендеринг"""
+        """Извлекает цену для DAR ES SALAAM используя Playwright"""
 
-        # МЕТОД 1: requests-html (стабильно, JS-рендеринг)
-        if REQUESTS_HTML_AVAILABLE:
-            price = self._extract_price_with_requests_html(url)
+        if PLAYWRIGHT_AVAILABLE:
+            # Playwright - стабильный JS-рендеринг
+            price = self._extract_price_with_playwright(url)
             if price and price != "ASK":
                 return price
-            logger.warning("⚠️ requests-html вернул ASK или None")
+            logger.warning("⚠️ Playwright вернул ASK")
 
-        # МЕТОД 2: Selenium (ОТКЛЮЧЕН - падает на серверах)
-        # if self.selenium_available:
-        #     return self._extract_price_with_selenium(url)
-
-        # МЕТОД 3: Fallback - BeautifulSoup (быстро, но может быть неточно)
-        logger.warning("⚠️ requests-html не помог, используем BeautifulSoup fallback")
+        # Fallback - BeautifulSoup
+        logger.warning("⚠️ Используем BeautifulSoup fallback")
         return self._extract_price_with_bs4(url)
 
     def _extract_price_with_selenium(self, url: str) -> Optional[str]:
@@ -303,61 +299,79 @@ class BeForwardParser:
                 except:
                     pass
 
-    def _extract_price_with_requests_html(self, url: str) -> Optional[str]:
-        """Извлекает цену используя requests-html (JS-рендеринг, стабильно на серверах)"""
+    def _extract_price_with_playwright(self, url: str) -> Optional[str]:
+        """Извлекает цену используя Playwright (стабильный JS-рендеринг)"""
         try:
-            logger.info("🌐 Загрузка страницы через requests-html...")
+            logger.info("🌐 Загрузка страницы через Playwright...")
 
-            # Разрешаем вложенные event loops
-            import nest_asyncio
-            nest_asyncio.apply()
-
-            # Получаем текущий loop и запускаем async функцию
-            loop = asyncio.get_event_loop()
-            result = loop.run_until_complete(self._fetch_price_async(url))
-            return result
+            # Запускаем async функцию через asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(self._fetch_price_with_playwright(url))
+                return result
+            finally:
+                loop.close()
 
         except Exception as e:
-            logger.error(f"❌ Ошибка requests-html: {e}")
+            logger.error(f"❌ Ошибка Playwright: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return None
 
-    async def _fetch_price_async(self, url: str) -> Optional[str]:
-        """Async метод для requests-html"""
-        session = AsyncHTMLSession()
-        response = await session.get(url)
+    async def _fetch_price_with_playwright(self, url: str) -> Optional[str]:
+        """Async метод для Playwright парсинга"""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
 
-        # Рендерим JavaScript
-        await response.html.arender(sleep=2, timeout=20)
+            try:
+                # Загружаем страницу
+                await page.goto(url, wait_until='networkidle', timeout=15000)
 
-        # Ищем цену в отрендеренном HTML
-        soup = BeautifulSoup(response.html.html, 'html.parser')
+                # Ждем появления модального окна с ценами
+                await page.wait_for_selector('#change-country-port-modal', timeout=10000)
 
-        # МЕТОД 1: #selected_total_price
-        selected_price_elem = soup.select_one('#selected_total_price')
-        if selected_price_elem:
-            price_text = selected_price_elem.get_text(strip=True)
-            if price_text and price_text != "ASK" and "$" in price_text:
-                logger.info(f"✅ requests-html: цена из #selected_total_price: {price_text}")
-                await session.close()
-                return price_text
+                # Даем время JS отработать
+                await page.wait_for_timeout(2000)
 
-        # МЕТОД 2: Ищем в модальном окне
-        modal = soup.select_one('#change-country-port-modal')
-        if modal:
-            selected_cell = modal.select_one('td.destination-selected.fn-quote-form-row-bg-selected')
-            if selected_cell:
-                price_span = selected_cell.select_one('span.fn-total-price-display')
-                if price_span:
-                    price_text = price_span.get_text(strip=True).replace('\xa0', '').replace(' ', '')
-                    logger.info(f"✅ requests-html: цена из модального окна: {price_text}")
-                    await session.close()
-                    return price_text
+                # МЕТОД 1: #selected_total_price
+                try:
+                    price_elem = await page.query_selector('#selected_total_price')
+                    if price_elem:
+                        price_text = await price_elem.inner_text()
+                        price_text = price_text.strip()
+                        if price_text and price_text != "ASK" and "$" in price_text:
+                            logger.info(f"✅ Playwright: цена из #selected_total_price: {price_text}")
+                            await browser.close()
+                            return price_text
+                except:
+                    pass
 
-        await session.close()
-        logger.warning("⚠️ requests-html: цена не найдена")
-        return "ASK"
+                # МЕТОД 2: Ищем checked radio и его цену
+                try:
+                    checked_input = await page.query_selector('input[type="radio"][checked]')
+                    if checked_input:
+                        # Получаем родительский tr
+                        parent_row = await checked_input.evaluate_handle('el => el.closest("tr")')
+                        # Ищем цену в строке
+                        price_span = await parent_row.query_selector('span.fn-total-price-display')
+                        if price_span:
+                            price_text = await price_span.inner_text()
+                            price_text = price_text.strip().replace('\xa0', '').replace(' ', '')
+                            logger.info(f"✅ Playwright: цена из checked input: {price_text}")
+                            await browser.close()
+                            return price_text
+                except:
+                    pass
+
+                await browser.close()
+                logger.warning("⚠️ Playwright: цена не найдена")
+                return "ASK"
+
+            except Exception as e:
+                await browser.close()
+                raise e
 
     def _extract_price_with_bs4(self, url: str) -> Optional[str]:
         """Fallback метод извлечения цены через BeautifulSoup (старый способ)"""
