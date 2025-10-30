@@ -149,6 +149,7 @@ class LocalBot:
         """Обработка одного URL"""
         await status_msg.edit_text("⏳ Получаю данные автомобиля...")
 
+        temp_dir = None  # Для cleanup в finally
         try:
             # 1. Парсим данные машины (в отдельном потоке, не блокируем event loop)
             logger.info(f"📋 Парсинг: {url}")
@@ -203,7 +204,10 @@ class LocalBot:
                     photo_base64 = base64.b64encode(f.read()).decode('utf-8')
                     photo_data.append(photo_base64)
 
-            logger.info(f"🚀 Отправка {len(photo_data)} из {len(photo_paths)} фото на RunPod...")
+            logger.info(f"🚀 Отправка {len(photo_data)} фото на RunPod...")
+
+            # Освобождаем список путей (файлы будут удалены в finally)
+            del photo_paths
 
             # 1. Запускаем async job
             run_response = requests.post(
@@ -231,6 +235,9 @@ class LocalBot:
             run_result = run_response.json()
             job_id = run_result.get("id")
             logger.info(f"✅ Job создан: {job_id}")
+
+            # Освобождаем память от base64 данных
+            del photo_data
 
             # 2. Polling результата
             max_wait = 300  # 5 минут
@@ -310,10 +317,6 @@ class LocalBot:
                     disable_web_page_preview=True
                 )
 
-            # Очистка temp_dir
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
-
         except Exception as e:
             logger.error(f"❌ Ошибка: {e}")
             import traceback
@@ -325,6 +328,13 @@ class LocalBot:
                 pass
 
             await update.message.reply_text(f"❌ Ошибка: {str(e)[:200]}")
+
+        finally:
+            # Всегда очищаем временные файлы
+            if temp_dir:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info(f"🗑️ Очищена временная директория: {temp_dir}")
 
     def run(self):
         """Запуск бота"""
