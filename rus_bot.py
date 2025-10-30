@@ -308,18 +308,19 @@ class BeForwardParser:
         try:
             logger.info("🌐 Загрузка страницы через requests-html...")
 
-            # Создаем новый event loop для синхронного вызова из async контекста
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Разрешаем вложенные event loops
+            import nest_asyncio
+            nest_asyncio.apply()
 
-            try:
-                result = loop.run_until_complete(self._fetch_price_async(url))
-                return result
-            finally:
-                loop.close()
+            # Получаем текущий loop и запускаем async функцию
+            loop = asyncio.get_event_loop()
+            result = loop.run_until_complete(self._fetch_price_async(url))
+            return result
 
         except Exception as e:
             logger.error(f"❌ Ошибка requests-html: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
 
     async def _fetch_price_async(self, url: str) -> Optional[str]:
