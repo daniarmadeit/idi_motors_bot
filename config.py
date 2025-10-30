@@ -25,10 +25,14 @@ OPENAI_TIMEOUT = 60  # секунд (увеличен из-за медленно
 # ============================================================================
 # IOPAINT SETTINGS
 # ============================================================================
-IOPAINT_URL = "http://127.0.0.1:8085"
+# IOPaint server URL (запускается handler.py на порту 8080)
+IOPAINT_URL = os.getenv('IOPAINT_HOST', 'http://127.0.0.1:8080')
 IOPAINT_INPAINT_ENDPOINT = "/api/v1/inpaint"
 IOPAINT_UPSCALE_ENDPOINT = "/api/v1/run_plugin_gen_image"
 IOPAINT_CONFIG_ENDPOINT = "/api/v1/server-config"
+
+# IOPaint device (cuda/cpu) - автоматически определяется в handler.py
+IOPAINT_DEVICE = os.getenv('IOPAINT_DEVICE', 'cuda')
 
 
 # ============================================================================

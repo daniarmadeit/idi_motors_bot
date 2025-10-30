@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import sys
+import subprocess
+import time
 
 import runpod
 from telegram import Update
@@ -25,6 +27,37 @@ logger = logging.getLogger(__name__)
 # Глобальные переменные для переиспользования между вызовами
 bot_instance = None
 application = None
+iopaint_process = None
+
+
+def start_iopaint():
+    """Запускает IOPaint сервер с GPU поддержкой"""
+    global iopaint_process
+
+    try:
+        logger.info("🎨 Запуск IOPaint сервера...")
+
+        # Определяем device (cuda если доступен, иначе cpu)
+        device = "cuda" if os.path.exists("/usr/local/cuda") else "cpu"
+        logger.info(f"🖥️ Используется device: {device}")
+
+        # Запускаем IOPaint в фоновом режиме
+        iopaint_process = subprocess.Popen([
+            "iopaint", "start",
+            "--model=lama",
+            f"--device={device}",
+            "--port=8080",
+            "--host=0.0.0.0"
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # Ждем 5 секунд для инициализации
+        time.sleep(5)
+
+        logger.info("✅ IOPaint сервер запущен на порту 8080")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска IOPaint: {e}")
+        raise
 
 
 def initialize_bot():
@@ -36,6 +69,9 @@ def initialize_bot():
         raise ValueError("BOT_TOKEN is required")
 
     logger.info("🔧 Инициализация бота...")
+
+    # Запускаем IOPaint сервер
+    start_iopaint()
 
     # Создаем экземпляр парсера и бота
     bot_instance = TelegramBot(config.BOT_TOKEN)
