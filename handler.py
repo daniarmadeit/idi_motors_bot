@@ -159,7 +159,6 @@ def start_iopaint():
             "--port=8080",
             "--host=0.0.0.0",
             "--enable-realesrgan",
-            "--realesrgan-device=auto",
             "--realesrgan-model=realesr-general-x4v3"
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
