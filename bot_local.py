@@ -143,6 +143,9 @@ class LocalBot:
                     photo_path = os.path.join(root, file)
                     photo_paths.append(photo_path)
 
+        # Сортируем по имени файла, чтобы гарантировать порядок (001.jpg, 002.jpg, ...)
+        photo_paths.sort()
+
         return photo_paths, temp_dir
 
     async def _process_url(self, url: str, update: Update, context: ContextTypes.DEFAULT_TYPE, status_msg):
