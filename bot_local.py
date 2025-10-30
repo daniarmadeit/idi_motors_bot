@@ -113,14 +113,48 @@ class LocalBot:
         self.is_processing = False
         logger.info("✅ Обработчик очереди завершён")
 
+    def _download_photos_sync(self, photo_download_url: str, referer_url: str):
+        """Синхронное скачивание фото (для executor)"""
+        import zipfile
+        import tempfile
+
+        temp_dir = tempfile.mkdtemp()
+        photo_paths = []
+
+        # Используем метод парсера для скачивания
+        response = self.parser.session.get(
+            photo_download_url,
+            timeout=120,
+            headers={'Referer': referer_url}
+        )
+        response.raise_for_status()
+
+        zip_path = os.path.join(temp_dir, 'photos.zip')
+        with open(zip_path, 'wb') as f:
+            f.write(response.content)
+
+        # Извлекаем фото
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+        # Собираем пути к фото
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    photo_path = os.path.join(root, file)
+                    photo_paths.append(photo_path)
+
+        return photo_paths, temp_dir
+
     async def _process_url(self, url: str, update: Update, context: ContextTypes.DEFAULT_TYPE, status_msg):
         """Обработка одного URL"""
-        await status_msg.edit_text("⏳ Парсинг данных...")
+        await status_msg.edit_text("⏳ Парсинг + скачивание...")
 
         try:
-            # 1. Парсим данные машины
+            # 1. Парсим данные машины (в отдельном потоке, не блокируем event loop)
             logger.info(f"📋 Парсинг: {url}")
-            car_data = self.parser.parse_car_data(url)
+            loop = asyncio.get_event_loop()
+            car_data = await loop.run_in_executor(None, self.parser.parse_car_data, url)
             result_text = self.parser.format_car_data(car_data)
 
             # 2. Получаем список фото
@@ -131,40 +165,14 @@ class LocalBot:
                 await status_msg.edit_text(result_text, disable_web_page_preview=True)
                 return
 
-            # 3. Скачиваем фото через парсер (он умеет обходить защиту BeForward)
-            await status_msg.edit_text("📥 Скачивание фото...")
-            logger.info(f"📥 Скачиваю фото через парсер")
-
-            import zipfile
-            import tempfile
-
-            temp_dir = tempfile.mkdtemp()
-            photo_paths = []
-
+            # 3. Скачиваем фото через парсер (в отдельном потоке)
             try:
-                # Используем метод парсера для скачивания
-                response = self.parser.session.get(
+                photo_paths, temp_dir = await loop.run_in_executor(
+                    None,
+                    self._download_photos_sync,
                     photo_download_url,
-                    timeout=120,
-                    headers={'Referer': url}
+                    url
                 )
-                response.raise_for_status()
-
-                zip_path = os.path.join(temp_dir, 'photos.zip')
-                with open(zip_path, 'wb') as f:
-                    f.write(response.content)
-
-                # Извлекаем фото
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-
-                # Собираем пути к фото
-                for root, dirs, files in os.walk(temp_dir):
-                    for file in files:
-                        if file.lower().endswith(('.jpg', '.jpeg', '.png')):
-                            photo_path = os.path.join(root, file)
-                            photo_paths.append(photo_path)
-
                 logger.info(f"✅ Скачано {len(photo_paths)} фото")
 
             except Exception as e:
