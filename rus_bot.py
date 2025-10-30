@@ -80,16 +80,16 @@ class BeForwardParser:
     def _create_webdriver(self):
         """Создает новый WebDriver (используется как context manager)"""
         options = Options()
-        options.add_argument('--headless=new')  # Новый headless режим
+        options.add_argument('--headless')  # Старый стабильный headless
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
+        options.add_argument('--single-process')  # Один процесс - избегаем IPC проблем
         options.add_argument('--disable-extensions')
         options.add_argument('--disable-logging')
         options.add_argument('--disable-web-security')
         options.add_argument('--disable-software-rasterizer')
         options.add_argument('--disable-setuid-sandbox')
-        options.add_argument('--remote-debugging-port=9222')
         options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument(f'user-agent={config.USER_AGENT}')
 
