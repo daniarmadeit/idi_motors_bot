@@ -21,7 +21,10 @@
       "Bash(dir:*)",
       "Bash(rm:*)",
       "Bash(docker build:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "Read(//c/Users/Miles/Downloads/**)",
+      "Bash(curl.exe -X POST \"https://api.telegram.org/bot8201014001:AAFjMWPtqDKvRBfE5JmCsCHdWKAyFonQD64/setWebhook\" -H \"Content-Type: application/json\" -d \"{\"\"url\"\":\"\"https://api.runpod.ai/v2/dctk9a7u6ppz1n/runsync\"\",\"\"allowed_updates\"\":[\"\"message\"\",\"\"callback_query\"\"]}\")",
+      "Bash(curl.exe:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
