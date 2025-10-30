@@ -67,7 +67,8 @@ class BeForwardParser:
         self.excluded_keywords = config.EXCLUDED_FIELDS
 
         # НЕ создаем постоянный WebDriver - создаем по требованию и закрываем
-        self.selenium_available = self._check_selenium_available()
+        # Selenium отключен из-за проблем с segfault на серверах
+        self.selenium_available = False  # self._check_selenium_available()
 
     def _check_selenium_available(self) -> bool:
         """Проверяет доступность Selenium WebDriver"""
@@ -240,14 +241,14 @@ class BeForwardParser:
             price = self._extract_price_with_requests_html(url)
             if price and price != "ASK":
                 return price
-            logger.warning("⚠️ requests-html вернул ASK, пробуем Selenium")
+            logger.warning("⚠️ requests-html вернул ASK или None")
 
-        # МЕТОД 2: Selenium (если requests-html не помог)
-        if self.selenium_available:
-            return self._extract_price_with_selenium(url)
+        # МЕТОД 2: Selenium (ОТКЛЮЧЕН - падает на серверах)
+        # if self.selenium_available:
+        #     return self._extract_price_with_selenium(url)
 
         # МЕТОД 3: Fallback - BeautifulSoup (быстро, но может быть неточно)
-        logger.warning("⚠️ JS-рендеринг недоступен, используем BeautifulSoup (может быть неточно)")
+        logger.warning("⚠️ requests-html не помог, используем BeautifulSoup fallback")
         return self._extract_price_with_bs4(url)
 
     def _extract_price_with_selenium(self, url: str) -> Optional[str]:
