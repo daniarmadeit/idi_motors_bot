@@ -83,7 +83,8 @@ def remove_watermark(img: Image.Image) -> Image.Image:
 
         if response.status_code != 200:
             logger.error(f"❌ Ошибка IOPaint: HTTP {response.status_code}")
-            logger.error(f"Response: {response.text[:500]}")
+            logger.error(f"Response body: {response.text}")
+            logger.error(f"Request payload keys: image_len={len(img_base64)}, mask_len={len(mask_base64)}")
             return img  # Возвращаем оригинал при ошибке
 
         # IOPaint API возвращает изображение напрямую в виде байтов
@@ -118,8 +119,19 @@ def start_iopaint():
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         # Ждем запуска
+        logger.info("⏳ Ожидание запуска IOPaint (10 сек)...")
         time.sleep(10)
-        logger.info("✅ IOPaint сервер запущен")
+
+        # Проверяем что сервер запустился
+        try:
+            test_response = requests.get(f"{IOPAINT_URL}/api/v1/server-config", timeout=5)
+            if test_response.status_code == 200:
+                logger.info("✅ IOPaint сервер запущен и отвечает")
+                logger.info(f"📋 Конфиг: {test_response.text[:200]}")
+            else:
+                logger.warning(f"⚠️ IOPaint запущен, но вернул статус {test_response.status_code}")
+        except Exception as e:
+            logger.error(f"❌ IOPaint не отвечает на запросы: {e}")
 
     except Exception as e:
         logger.error(f"❌ Ошибка запуска IOPaint: {e}")
