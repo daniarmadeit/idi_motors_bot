@@ -80,13 +80,17 @@ class BeForwardParser:
     def _create_webdriver(self):
         """Создает новый WebDriver (используется как context manager)"""
         options = Options()
-        options.add_argument('--headless')
+        options.add_argument('--headless=new')  # Новый headless режим
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
         options.add_argument('--disable-extensions')
         options.add_argument('--disable-logging')
         options.add_argument('--disable-web-security')
+        options.add_argument('--disable-software-rasterizer')
+        options.add_argument('--disable-setuid-sandbox')
+        options.add_argument('--remote-debugging-port=9222')
+        options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument(f'user-agent={config.USER_AGENT}')
 
         # Быстрая загрузка - не ждём полной загрузки ресурсов
@@ -98,10 +102,17 @@ class BeForwardParser:
             "profile.default_content_setting_values.notifications": 2,
         }
         options.add_experimental_option("prefs", prefs)
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
 
         # Используем системный chromedriver (избегаем проблем с автоматической загрузкой)
         from selenium.webdriver.chrome.service import Service
-        service = Service(executable_path='/usr/bin/chromedriver')
+
+        # Отключаем лишние логи
+        service = Service(
+            executable_path='/usr/bin/chromedriver',
+            log_output=os.devnull
+        )
 
         return webdriver.Chrome(service=service, options=options)
 
