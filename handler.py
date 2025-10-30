@@ -124,7 +124,9 @@ def upscale_image(img: Image.Image) -> Image.Image:
 
         if response.status_code != 200:
             logger.warning(f"⚠️ Upscaling не удался (HTTP {response.status_code})")
-            logger.warning(f"Response: {response.text[:500]}")
+            logger.warning(f"Response body: {response.text}")
+            logger.warning(f"Request: {IOPAINT_URL}{IOPAINT_UPSCALE_ENDPOINT}")
+            logger.warning(f"Payload: name=RealESRGAN, upscale={UPSCALE_FACTOR}")
             return img  # Возвращаем оригинал при ошибке
 
         # IOPaint API возвращает изображение напрямую в виде байтов
