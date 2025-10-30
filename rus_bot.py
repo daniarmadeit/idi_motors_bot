@@ -22,7 +22,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ChatAction
 
 try:
-    from requests_html import HTMLSession
+    from requests_html import AsyncHTMLSession
     REQUESTS_HTML_AVAILABLE = True
 except ImportError:
     REQUESTS_HTML_AVAILABLE = False
@@ -308,43 +308,55 @@ class BeForwardParser:
         try:
             logger.info("🌐 Загрузка страницы через requests-html...")
 
-            session = HTMLSession()
-            response = session.get(url, timeout=15)
+            # Создаем новый event loop для синхронного вызова из async контекста
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-            # Рендерим JavaScript (теперь работает т.к. вызываем в main thread)
-            response.html.render(sleep=2, timeout=20)
-
-            # Ищем цену в отрендеренном HTML
-            soup = BeautifulSoup(response.html.html, 'html.parser')
-
-            # МЕТОД 1: #selected_total_price
-            selected_price_elem = soup.select_one('#selected_total_price')
-            if selected_price_elem:
-                price_text = selected_price_elem.get_text(strip=True)
-                if price_text and price_text != "ASK" and "$" in price_text:
-                    logger.info(f"✅ requests-html: цена из #selected_total_price: {price_text}")
-                    session.close()
-                    return price_text
-
-            # МЕТОД 2: Ищем в модальном окне
-            modal = soup.select_one('#change-country-port-modal')
-            if modal:
-                selected_cell = modal.select_one('td.destination-selected.fn-quote-form-row-bg-selected')
-                if selected_cell:
-                    price_span = selected_cell.select_one('span.fn-total-price-display')
-                    if price_span:
-                        price_text = price_span.get_text(strip=True).replace('\xa0', '').replace(' ', '')
-                        logger.info(f"✅ requests-html: цена из модального окна: {price_text}")
-                        session.close()
-                        return price_text
-
-            session.close()
-            logger.warning("⚠️ requests-html: цена не найдена")
-            return "ASK"
+            try:
+                result = loop.run_until_complete(self._fetch_price_async(url))
+                return result
+            finally:
+                loop.close()
 
         except Exception as e:
             logger.error(f"❌ Ошибка requests-html: {e}")
             return None
+
+    async def _fetch_price_async(self, url: str) -> Optional[str]:
+        """Async метод для requests-html"""
+        session = AsyncHTMLSession()
+        response = await session.get(url)
+
+        # Рендерим JavaScript
+        await response.html.arender(sleep=2, timeout=20)
+
+        # Ищем цену в отрендеренном HTML
+        soup = BeautifulSoup(response.html.html, 'html.parser')
+
+        # МЕТОД 1: #selected_total_price
+        selected_price_elem = soup.select_one('#selected_total_price')
+        if selected_price_elem:
+            price_text = selected_price_elem.get_text(strip=True)
+            if price_text and price_text != "ASK" and "$" in price_text:
+                logger.info(f"✅ requests-html: цена из #selected_total_price: {price_text}")
+                await session.close()
+                return price_text
+
+        # МЕТОД 2: Ищем в модальном окне
+        modal = soup.select_one('#change-country-port-modal')
+        if modal:
+            selected_cell = modal.select_one('td.destination-selected.fn-quote-form-row-bg-selected')
+            if selected_cell:
+                price_span = selected_cell.select_one('span.fn-total-price-display')
+                if price_span:
+                    price_text = price_span.get_text(strip=True).replace('\xa0', '').replace(' ', '')
+                    logger.info(f"✅ requests-html: цена из модального окна: {price_text}")
+                    await session.close()
+                    return price_text
+
+        await session.close()
+        logger.warning("⚠️ requests-html: цена не найдена")
+        return "ASK"
 
     def _extract_price_with_bs4(self, url: str) -> Optional[str]:
         """Fallback метод извлечения цены через BeautifulSoup (старый способ)"""
