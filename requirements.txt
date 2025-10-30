@@ -7,11 +7,10 @@ requests==2.31.0
 selenium==4.16.0
 
 # Image processing & AI
-# Install IOPaint with all plugins (RealESRGAN, interactive seg, etc.)
-iopaint[all_plugins]==1.6.0
+iopaint==1.6.0
 
 # Environment variables
 python-dotenv==1.0.0
 
 # RunPod serverless
-runpod==1.7.0
+runpod==1.6.2
