@@ -55,32 +55,31 @@ def start_iopaint():
         raise
 
 
-def process_photos(photo_urls: list) -> bytes:
+def process_photos(photo_data_list: list) -> bytes:
     """
     Обрабатывает список фото через IOPaint
 
     Args:
-        photo_urls: Список URL фото
+        photo_data_list: Список base64-encoded фото
 
     Returns:
         bytes: ZIP архив с очищенными фото
     """
-    logger.info(f"🎨 Обработка {len(photo_urls)} фото...")
+    logger.info(f"🎨 Обработка {len(photo_data_list)} фото...")
 
     temp_dir = tempfile.mkdtemp()
     cleaned_photos = []
 
     try:
-        for idx, photo_url in enumerate(photo_urls):
+        for idx, photo_base64 in enumerate(photo_data_list):
             try:
-                logger.info(f"📥 Скачиваю фото {idx + 1}/{len(photo_urls)}")
+                logger.info(f"📥 Декодирую фото {idx + 1}/{len(photo_data_list)}")
 
-                # Скачиваем фото
-                response = requests.get(photo_url, timeout=30)
-                response.raise_for_status()
+                # Декодируем base64 в байты
+                photo_bytes = base64.b64decode(photo_base64)
 
                 # Сохраняем оригинал
-                img = Image.open(io.BytesIO(response.content))
+                img = Image.open(io.BytesIO(photo_bytes))
                 original_path = os.path.join(temp_dir, f"photo_{idx:03d}.jpg")
                 img.save(original_path)
 
@@ -137,7 +136,7 @@ def handler(event):
 
     Input:
         {
-            "photo_urls": ["url1", "url2", ...]
+            "photo_urls": ["base64_1", "base64_2", ...]
         }
 
     Output:
@@ -153,21 +152,21 @@ def handler(event):
         start_iopaint()
 
     input_data = event.get("input", {})
-    photo_urls = input_data.get("photo_urls", [])
+    photo_data = input_data.get("photo_urls", [])
 
-    if not photo_urls:
+    if not photo_data:
         return {"error": "No photo_urls provided"}
 
     try:
         # Обрабатываем фото
-        zip_bytes = process_photos(photo_urls)
+        zip_bytes = process_photos(photo_data)
 
         # Конвертируем в base64 для передачи
         zip_base64 = base64.b64encode(zip_bytes).decode('utf-8')
 
         return {
             "status": "success",
-            "photo_count": len(photo_urls),
+            "photo_count": len(photo_data),
             "zip_base64": zip_base64,
             "zip_size": len(zip_bytes)
         }
