@@ -1,0 +1,33 @@
+{
+  "tests": [
+    {
+      "name": "validation_url_input",
+      "input": {
+        "url": "https://beforward.jp/detail/123456"
+      },
+      "timeout": 30000
+    },
+    {
+      "name": "telegram_webhook_test",
+      "input": {
+        "telegram_update": {
+          "update_id": 123456789,
+          "message": {
+            "message_id": 1,
+            "from": {
+              "id": 123456,
+              "is_bot": false,
+              "first_name": "Test"
+            },
+            "chat": {
+              "id": 123456,
+              "type": "private"
+            },
+            "text": "/start"
+          }
+        }
+      },
+      "timeout": 10000
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "title": "idi_motors_bot",
+  "description": "Telegram bot for parsing cars from BeForward.jp with AI-powered image processing and watermark removal",
+  "type": "serverless",
+  "category": "image",
+  "iconUrl": "https://raw.githubusercontent.com/daniarmadeit/idi_motors_bot/master/.github/icon.png",
+  "config": {
+    "runpod": "GPU",
+    "containerDiskInGb": 20,
+    "presets": []
+  }
+}
