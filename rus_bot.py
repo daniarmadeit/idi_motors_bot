@@ -84,7 +84,21 @@ class BeForwardParser:
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-logging')
+        options.add_argument('--disable-web-security')
         options.add_argument(f'user-agent={config.USER_AGENT}')
+
+        # Быстрая загрузка - не ждём полной загрузки ресурсов
+        options.page_load_strategy = 'eager'
+
+        # Отключаем картинки для ускорения
+        prefs = {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.default_content_setting_values.notifications": 2,
+        }
+        options.add_experimental_option("prefs", prefs)
+
         return webdriver.Chrome(options=options)
 
     def __del__(self):

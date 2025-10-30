@@ -135,14 +135,17 @@ class LocalBot:
                 f"Это займет ~30-60 сек"
             )
 
-            logger.info(f"🚀 Отправка {len(photo_paths)} фото на RunPod...")
-
             # Конвертируем локальные файлы в base64 для отправки
+            # Лимит: 30 фото
+            MAX_PHOTOS = 30
+
             photo_data = []
-            for photo_path in photo_paths[:10]:  # Лимит 10 фото
+            for photo_path in photo_paths[:MAX_PHOTOS]:
                 with open(photo_path, 'rb') as f:
                     photo_base64 = base64.b64encode(f.read()).decode('utf-8')
                     photo_data.append(photo_base64)
+
+            logger.info(f"🚀 Отправка {len(photo_data)} из {len(photo_paths)} фото на RunPod...")
 
             # Вызываем RunPod API
             runpod_response = requests.post(
