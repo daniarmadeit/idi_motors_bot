@@ -99,7 +99,11 @@ class BeForwardParser:
         }
         options.add_experimental_option("prefs", prefs)
 
-        return webdriver.Chrome(options=options)
+        # Используем системный chromedriver (избегаем проблем с автоматической загрузкой)
+        from selenium.webdriver.chrome.service import Service
+        service = Service(executable_path='/usr/bin/chromedriver')
+
+        return webdriver.Chrome(service=service, options=options)
 
     def __del__(self):
         """Закрытие ресурсов при удалении объекта"""
