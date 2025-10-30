@@ -27,9 +27,14 @@ logger = logging.getLogger(__name__)
 # Константы (из config.py)
 IOPAINT_URL = "http://127.0.0.1:8080"
 IOPAINT_INPAINT_ENDPOINT = "/api/v1/inpaint"
+IOPAINT_UPSCALE_ENDPOINT = "/api/v1/run_plugin_gen_image"
 WATERMARK_WIDTH = 300
 WATERMARK_HEIGHT = 30
 INPAINT_TIMEOUT = 120
+UPSCALE_TIMEOUT = 180
+UPSCALE_FACTOR = 2
+MIN_RESOLUTION_WIDTH = 1920
+MIN_RESOLUTION_HEIGHT = 1080
 
 iopaint_process = None
 
@@ -100,6 +105,41 @@ def remove_watermark(img: Image.Image) -> Image.Image:
         return img  # Возвращаем оригинал при ошибке
 
 
+def upscale_image(img: Image.Image) -> Image.Image:
+    """Увеличивает разрешение изображения через RealESRGAN"""
+    try:
+        img_base64 = image_to_base64(img)
+
+        payload = {
+            'image': img_base64,
+            'name': 'RealESRGAN',
+            'upscale': UPSCALE_FACTOR
+        }
+
+        response = requests.post(
+            f"{IOPAINT_URL}{IOPAINT_UPSCALE_ENDPOINT}",
+            json=payload,
+            timeout=UPSCALE_TIMEOUT
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"⚠️ Upscaling не удался (HTTP {response.status_code})")
+            logger.warning(f"Response: {response.text[:500]}")
+            return img  # Возвращаем оригинал при ошибке
+
+        # IOPaint API возвращает изображение напрямую в виде байтов
+        result_bytes = response.content
+        logger.info(f"✅ Upscale: получено {len(result_bytes)} байт")
+
+        return Image.open(io.BytesIO(result_bytes))
+
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка upscaling: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
+        return img  # Возвращаем оригинал при ошибке
+
+
 def start_iopaint():
     """Запускает IOPaint сервер с GPU поддержкой"""
     global iopaint_process
@@ -161,11 +201,19 @@ def process_photos(photo_data_list: list) -> bytes:
                 # Декодируем base64 в изображение
                 photo_bytes = base64.b64decode(photo_base64)
                 img = Image.open(io.BytesIO(photo_bytes))
+                img_width, img_height = img.size
                 logger.info(f"📊 Размер изображения: {img.size}")
 
                 # Удаляем водяной знак через IOPaint
                 logger.info(f"🧹 Удаление watermark...")
                 cleaned_img = remove_watermark(img)
+
+                # Upscale если разрешение меньше Full HD
+                if img_width * img_height < MIN_RESOLUTION_WIDTH * MIN_RESOLUTION_HEIGHT:
+                    logger.info(f"📈 Upscaling {img_width}x{img_height} → {img_width*UPSCALE_FACTOR}x{img_height*UPSCALE_FACTOR}...")
+                    cleaned_img = upscale_image(cleaned_img)
+                else:
+                    logger.info(f"✓ Upscale не требуется (разрешение {img_width}x{img_height})")
 
                 # Сохраняем очищенное фото
                 cleaned_path = os.path.join(temp_dir, f"cleaned_{idx:03d}.jpg")
