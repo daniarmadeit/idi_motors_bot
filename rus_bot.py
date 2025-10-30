@@ -135,12 +135,12 @@ class BeForwardParser:
             # Добавляем параметр для Замбии чтобы получить африканские порты
             url_with_zambia = self._add_zambia_country_param(url)
             logger.info(f"🌍 URL с параметром страны: {url_with_zambia}")
-            
+
             response = self.session.get(url_with_zambia, timeout=10)
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.content, 'html.parser')
-            
+
             car_data = {
                 'car_name': None,
                 'specs': {},
@@ -149,23 +149,32 @@ class BeForwardParser:
                 'photo_urls': [],  # Для второй версии
                 'url': url
             }
-            
+
             # Название автомобиля
+            logger.info("📝 Извлечение названия автомобиля...")
             car_data['car_name'] = self._extract_car_name(soup)
-            
+            logger.info(f"✅ Название: {car_data['car_name']}")
+
             # Характеристики
+            logger.info("📋 Извлечение характеристик...")
             car_data['specs'] = self._extract_specs(soup)
-            
+            logger.info(f"✅ Характеристики получены: {len(car_data['specs'])} полей")
+
             # Цена для Dar es Salaam (RORO) - используем Selenium для точности
+            logger.info("💰 Извлечение цены...")
             car_data['lusaka_price'] = self._extract_lusaka_price(url_with_zambia)
-            
+            logger.info(f"✅ Цена получена: {car_data['lusaka_price']}")
+
             # Ссылка на скачивание фото
+            logger.info("📸 Извлечение ссылки на фото...")
             car_data['photo_download_url'] = self._extract_photo_download_url(soup)
-            
+            logger.info(f"✅ Ссылка на фото: {car_data['photo_download_url']}")
+
             # Если вторая версия, собираем ссылки на фото
             if car_data['photo_download_url'] == "COLLECT_PHOTOS":
                 car_data['photo_urls'] = self._collect_photo_urls(soup)
-            
+
+            logger.info("✅ Парсинг завершён успешно")
             return car_data
             
         except Exception as e:
