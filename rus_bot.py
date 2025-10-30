@@ -20,11 +20,22 @@ from PIL import Image, ImageDraw
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 from telegram.constants import ChatAction
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
+
+try:
+    from requests_html import HTMLSession
+    REQUESTS_HTML_AVAILABLE = True
+except ImportError:
+    REQUESTS_HTML_AVAILABLE = False
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.options import Options
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
 
 import config
 
@@ -222,14 +233,21 @@ class BeForwardParser:
         return f'{url}?{country_param}'
     
     def _extract_lusaka_price(self, url: str) -> Optional[str]:
-        """Извлекает цену для DAR ES SALAAM используя Selenium для точности (JS-рендеринг)"""
+        """Извлекает цену для DAR ES SALAAM используя JS-рендеринг"""
 
-        # МЕТОД 1: Selenium (точно, но медленнее)
+        # МЕТОД 1: requests-html (стабильно, JS-рендеринг)
+        if REQUESTS_HTML_AVAILABLE:
+            price = self._extract_price_with_requests_html(url)
+            if price and price != "ASK":
+                return price
+            logger.warning("⚠️ requests-html вернул ASK, пробуем Selenium")
+
+        # МЕТОД 2: Selenium (если requests-html не помог)
         if self.selenium_available:
             return self._extract_price_with_selenium(url)
 
-        # МЕТОД 2: Fallback - BeautifulSoup (быстро, но может быть неточно)
-        logger.warning("⚠️ Selenium недоступен, используем BeautifulSoup (может быть неточно)")
+        # МЕТОД 3: Fallback - BeautifulSoup (быстро, но может быть неточно)
+        logger.warning("⚠️ JS-рендеринг недоступен, используем BeautifulSoup (может быть неточно)")
         return self._extract_price_with_bs4(url)
 
     def _extract_price_with_selenium(self, url: str) -> Optional[str]:
@@ -293,6 +311,48 @@ class BeForwardParser:
                     logger.debug("🔒 WebDriver закрыт")
                 except:
                     pass
+
+    def _extract_price_with_requests_html(self, url: str) -> Optional[str]:
+        """Извлекает цену используя requests-html (JS-рендеринг, стабильно на серверах)"""
+        try:
+            logger.info("🌐 Загрузка страницы через requests-html...")
+            session = HTMLSession()
+            response = session.get(url, timeout=15)
+
+            # Рендерим JavaScript
+            response.html.render(sleep=2, timeout=20)
+
+            # Ищем цену в отрендеренном HTML
+            soup = BeautifulSoup(response.html.html, 'html.parser')
+
+            # МЕТОД 1: #selected_total_price
+            selected_price_elem = soup.select_one('#selected_total_price')
+            if selected_price_elem:
+                price_text = selected_price_elem.get_text(strip=True)
+                if price_text and price_text != "ASK" and "$" in price_text:
+                    logger.info(f"✅ requests-html: цена из #selected_total_price: {price_text}")
+                    session.close()
+                    return price_text
+
+            # МЕТОД 2: Ищем в модальном окне
+            modal = soup.select_one('#change-country-port-modal')
+            if modal:
+                selected_cell = modal.select_one('td.destination-selected.fn-quote-form-row-bg-selected')
+                if selected_cell:
+                    price_span = selected_cell.select_one('span.fn-total-price-display')
+                    if price_span:
+                        price_text = price_span.get_text(strip=True).replace('\xa0', '').replace(' ', '')
+                        logger.info(f"✅ requests-html: цена из модального окна: {price_text}")
+                        session.close()
+                        return price_text
+
+            session.close()
+            logger.warning("⚠️ requests-html: цена не найдена")
+            return "ASK"
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка requests-html: {e}")
+            return None
 
     def _extract_price_with_bs4(self, url: str) -> Optional[str]:
         """Fallback метод извлечения цены через BeautifulSoup (старый способ)"""
