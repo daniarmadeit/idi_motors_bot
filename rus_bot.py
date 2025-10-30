@@ -333,12 +333,17 @@ class BeForwardParser:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
 
+            # Устанавливаем user-agent чтобы не блокировали
+            await page.set_extra_http_headers({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+
             try:
-                # Загружаем страницу
-                await page.goto(url, wait_until='networkidle', timeout=15000)
+                # Загружаем страницу (domcontentloaded быстрее чем networkidle)
+                await page.goto(url, wait_until='domcontentloaded', timeout=30000)
 
                 # Ждем появления модального окна с ценами
-                await page.wait_for_selector('#change-country-port-modal', timeout=10000)
+                await page.wait_for_selector('#change-country-port-modal', timeout=15000)
 
                 # Даем время JS отработать
                 await page.wait_for_timeout(2000)
