@@ -15,11 +15,11 @@ BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 
 
 # ============================================================================
-# OPENAI SETTINGS
+# OPENAI SETTINGS (DISABLED - OpenAI descriptions removed from bot)
 # ============================================================================
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-OPENAI_MODEL = "gpt-5-nano"
-OPENAI_TIMEOUT = 60  # секунд (увеличен из-за медленной сети и reasoning tokens)
+# OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+# OPENAI_MODEL = "gpt-5-nano"
+# OPENAI_TIMEOUT = 60  # секунд
 
 
 # ============================================================================

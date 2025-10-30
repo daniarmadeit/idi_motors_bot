@@ -88,7 +88,6 @@ Category: Image
 | Key | Value |
 |-----|-------|
 | `BOT_TOKEN` | `ваш_telegram_bot_token` |
-| `OPENAI_API_KEY` | `ваш_openai_api_key` |
 | `IOPAINT_HOST` | `http://127.0.0.1:8080` |
 
 ### 2.4 Compute Configuration
@@ -212,7 +211,7 @@ curl "https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
 ### Проблема 3: Бот не отвечает
 
 1. Проверить логи в RunPod Dashboard
-2. Проверить Environment Variables (BOT_TOKEN, OPENAI_API_KEY)
+2. Проверить Environment Variables (BOT_TOKEN, IOPAINT_HOST)
 3. Убедиться что endpoint в статусе **Running**
 
 ### Проблема 4: Ошибка сборки Docker

@@ -16,7 +16,6 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI
 from PIL import Image, ImageDraw
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
@@ -55,13 +54,6 @@ class BeForwardParser:
         self.session.mount('https://', adapter)
 
         self.excluded_keywords = config.EXCLUDED_FIELDS
-
-        # Инициализация OpenAI
-        if not config.OPENAI_API_KEY:
-            logger.warning("⚠️ OPENAI_API_KEY не установлен - генерация описаний будет недоступна")
-            self.openai_client = None
-        else:
-            self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
 
         # НЕ создаем постоянный WebDriver - создаем по требованию и закрываем
         self.selenium_available = self._check_selenium_available()
@@ -1004,68 +996,7 @@ class BeForwardParser:
         
         return result
     
-    def generate_sales_description(self, car_data: Dict) -> Optional[str]:
-        """Генерирует продающее описание через OpenAI
-
-        Args:
-            car_data: Словарь с данными автомобиля
-
-        Returns:
-            Сгенерированное описание или None при ошибке
-        """
-        if self.openai_client is None:
-            logger.error("❌ OpenAI клиент не инициализирован")
-            return None
-
-        try:
-            logger.info(f"🤖 Генерируем продающее описание через {config.OPENAI_MODEL}...")
-
-            car_name = car_data.get('car_name', 'Unknown vehicle')
-            specs = car_data.get('specs', {})
-            price = car_data.get('lusaka_price', 'Price available on request')
-
-            logger.info(f"📋 Данные автомобиля: {car_name}")
-            logger.info(f"💰 Цена: {price}")
-            logger.info(f"📊 Характеристик: {len(specs)}")
-
-            # Формируем промпт
-            specs_text = "\n".join([f"- {key}: {value}" for key, value in specs.items()])
-
-            prompt = config.OPENAI_USER_PROMPT_TEMPLATE.format(
-                car_name=car_name,
-                price=price,
-                specs_text=specs_text
-            )
-
-            logger.info(f"📝 Промпт готов, длина: {len(prompt)} символов")
-            logger.info("🚀 Отправляем запрос в OpenAI...")
-
-            # Отправляем запрос в OpenAI с таймаутом
-            response = self.openai_client.chat.completions.create(
-                model=config.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": config.OPENAI_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                timeout=config.OPENAI_TIMEOUT
-            )
-
-            logger.info("✅ Получен ответ от OpenAI")
-            logger.info(f"📊 Usage: {response.usage}")
-
-            description = response.choices[0].message.content.strip()
-            logger.info(f"📝 Описание сгенерировано, длина: {len(description)} символов")
-            logger.info("✅ Описание сгенерировано успешно")
-            return description
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка генерации описания: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-
-            if "timeout" in str(e).lower():
-                logger.error("⏰ Таймаут при генерации описания")
-            return None
+    # OpenAI description generation removed - descriptions created manually
 
 class TelegramBot:
     """Telegram бот для работы с BeForward парсером"""
