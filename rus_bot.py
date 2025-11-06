@@ -972,14 +972,32 @@ class BeForwardParser:
                 logger.warning("⚠️ Не найдено изображений в архиве")
                 return None
 
-            logger.info(f"📸 Найдено изображений: {len(image_files)}")
+            total_photos = len(image_files)
+            logger.info(f"📸 Найдено изображений: {total_photos}")
 
-            # 4. Обрабатываем изображения (с лимитом)
-            image_files_limited = image_files[:config.PHOTO_PROCESSING_LIMIT]
-            logger.info(
-                f"🎨 Обрабатываем {len(image_files_limited)} изображений "
-                f"(из {len(image_files)})..."
-            )
+            # 4. Выбираем изображения по новой логике
+            if total_photos <= 20:
+                # 1-20 фото: берём все
+                image_files_limited = image_files
+                logger.info(f"🎨 Обрабатываем все {total_photos} изображений")
+            elif total_photos < 30:
+                # 21-29 фото: первые 10 + последние 10
+                first_10 = image_files[:10]
+                last_10 = image_files[-10:]
+                image_files_limited = first_10 + last_10
+                logger.info(
+                    f"🎨 Обрабатываем 20 изображений из {total_photos}: "
+                    f"первые 10 + последние 10"
+                )
+            else:
+                # 30+ фото: первые 10 + диапазон 20-30 (индексы 19-29)
+                first_10 = image_files[:10]
+                range_20_30 = image_files[19:29]  # индексы 19-28 (фото 20-29)
+                image_files_limited = first_10 + range_20_30
+                logger.info(
+                    f"🎨 Обрабатываем 20 изображений из {total_photos}: "
+                    f"первые 10 + фото 20-29"
+                )
 
             for idx, image_path in enumerate(image_files_limited):
                 # Обновляем прогресс-бар в сообщении (добавляем к спекам)
@@ -1105,28 +1123,32 @@ class BeForwardParser:
             except Exception as cleanup_error:
                 logger.warning(f"⚠️ Не удалось очистить temp_dir: {cleanup_error}")
 
-    def format_car_data(self, car_data: Dict) -> str:
+    def format_car_data(self, car_data: Dict, url: str = None) -> str:
         """Форматирует данные для отправки в Telegram"""
         if 'error' in car_data:
             return f"❌ Ошибка: {car_data['error']}"
-        
+
         car_name = car_data.get('car_name', 'Неизвестный автомобиль')
         result = f"🚗 {car_name}\n\n"
-        
+
         # Добавляем цену
         lusaka_price = car_data.get('lusaka_price')
         if lusaka_price:
             result += f"Price - {lusaka_price}\n\n"
         else:
             result += "ℹ️ Цена не найдена\n\n"
-        
+
         if car_data.get('specs'):
             result += "📋 Specifications:\n"
             for key, value in car_data['specs'].items():
                 result += f"• {key}: {value}\n"
         else:
             result += "ℹ️ Specifications not found\n"
-        
+
+        # Добавляем ссылку на объявление
+        if url:
+            result += f"\n🔗 {url}"
+
         return result
     
     # OpenAI description generation removed - descriptions created manually
@@ -1227,7 +1249,7 @@ class TelegramBot:
                     car_data = self.parser.parse_car_data(url)
 
                     # Форматируем результат
-                    result_text = self.parser.format_car_data(car_data)
+                    result_text = self.parser.format_car_data(car_data, url)
 
                     # АВТОМАТИЧЕСКАЯ ОЧИСТКА ФОТО (показываем прогресс в статус-сообщении)
                     cleaned_zip = None
