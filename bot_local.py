@@ -163,7 +163,7 @@ class LocalBot:
             car_data = await loop.run_in_executor(None, self.parser.parse_car_data, url)
             logger.info(f"✅ parse_car_data завершён")
 
-            result_text = self.parser.format_car_data(car_data)
+            result_text = self.parser.format_car_data(car_data, url)
             logger.info(f"✅ format_car_data завершён")
 
             # 2. Получаем список фото
