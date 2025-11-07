@@ -605,7 +605,7 @@ class BeForwardParser:
         """Собирает ссылки на фото из слайдера"""
         photo_urls = []
         slider_wrapper = soup.select_one("#vehicle-photo-slider > div.swiper-wrapper")
-        
+
         if slider_wrapper:
             slides = slider_wrapper.select("div.swiper-slide")
             for slide in slides:
@@ -619,7 +619,7 @@ class BeForwardParser:
                     elif img_src.startswith("/"):
                         img_src = "https://www.beforward.jp" + img_src
                     photo_urls.append(img_src)
-                
+
                 # Также ищем data-src (для lazy loading)
                 if img and img.get("data-src"):
                     img_src = img.get("data-src")
@@ -628,9 +628,53 @@ class BeForwardParser:
                     elif img_src.startswith("/"):
                         img_src = "https://www.beforward.jp" + img_src
                     photo_urls.append(img_src)
-        
-        return list(set(photo_urls))  # Убираем дубли
-    
+
+        # Убираем дубли с сохранением порядка
+        seen = set()
+        unique_photos = []
+        for url in photo_urls:
+            if url not in seen:
+                seen.add(url)
+                unique_photos.append(url)
+
+        return unique_photos
+
+    def _select_photos_smart(self, photo_paths: list) -> list:
+        """
+        Умный выбор фото по правилам:
+        1-20 фото: все фото
+        21-29 фото: первые 10 + последние 10
+        30+ фото: первые 10 + фото с 20 по 30
+
+        Args:
+            photo_paths: Список путей к фото (отсортированный)
+
+        Returns:
+            Список выбранных путей (всегда ≤ 20)
+        """
+        total = len(photo_paths)
+
+        # 1-20 фото: берём все
+        if total <= 20:
+            logger.info(f"📸 Выбрано {total} фото (все доступные)")
+            return photo_paths
+
+        # 21-29 фото: первые 10 + последние 10
+        elif total < 30:
+            first_10 = photo_paths[:10]
+            last_10 = photo_paths[-10:]
+            selected = first_10 + last_10
+            logger.info(f"📸 Выбрано 20 фото из {total}: первые 10 + последние 10")
+            return selected
+
+        # 30+ фото: первые 10 + фото с 20 по 30
+        else:
+            first_10 = photo_paths[:10]
+            middle_10 = photo_paths[19:29]  # индексы 19-28 = фото 20-29
+            selected = first_10 + middle_10
+            logger.info(f"📸 Выбрано 20 фото из {total}: первые 10 + с 20 по 29")
+            return selected
+
     def _check_iopaint_server(self, iopaint_url: str) -> bool:
         """Проверяет доступность IOPaint сервера
 

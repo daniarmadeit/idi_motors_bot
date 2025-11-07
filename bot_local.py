@@ -202,24 +202,23 @@ class LocalBot:
                 )
                 return
 
-            # 4. Отправляем фото на RunPod для обработки
-            photo_count = min(len(photo_paths), 20)
+            # 4. Умный выбор фото (всегда ≤ 20)
+            selected_photos = self.parser._select_photos_smart(photo_paths)
+            photo_count = len(selected_photos)
             await status_msg.edit_text(f"🎨 Обработка {photo_count} фото...")
 
             # Конвертируем локальные файлы в base64 для отправки
-            # Лимит: 20 фото
-            MAX_PHOTOS = 20
-
             photo_data = []
-            for photo_path in photo_paths[:MAX_PHOTOS]:
+            for photo_path in selected_photos:
                 with open(photo_path, 'rb') as f:
                     photo_base64 = base64.b64encode(f.read()).decode('utf-8')
                     photo_data.append(photo_base64)
 
             logger.info(f"🚀 Отправка {len(photo_data)} фото на RunPod...")
 
-            # Освобождаем список путей (файлы будут удалены в finally)
+            # Освобождаем списки (файлы будут удалены в finally)
             del photo_paths
+            del selected_photos
 
             # 1. Запускаем async job
             run_response = requests.post(
