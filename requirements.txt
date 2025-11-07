@@ -7,7 +7,7 @@ python-telegram-bot==20.7
 # Web scraping
 beautifulsoup4
 requests
-selenium
+playwright
 
 # Image processing & AI
 Pillow
