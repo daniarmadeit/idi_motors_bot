@@ -143,8 +143,20 @@ class LocalBot:
                     photo_path = os.path.join(root, file)
                     photo_paths.append(photo_path)
 
-        # Сортируем по имени файла, чтобы гарантировать порядок (001.jpg, 002.jpg, ...)
-        photo_paths.sort()
+        # Натуральная сортировка по числам в имени файла (1.jpg, 2.jpg, ..., 10.jpg)
+        import re
+        def extract_number(path):
+            """Извлекает число из имени файла для правильной сортировки"""
+            filename = os.path.basename(path)
+            # Ищем число перед расширением: XXX_123.jpg -> 123
+            match = re.search(r'_?(\d+)\.(jpg|jpeg|png)$', filename, re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+            # Если не найдено, ищем любое число в имени
+            numbers = re.findall(r'\d+', filename)
+            return int(numbers[-1]) if numbers else 0
+
+        photo_paths.sort(key=extract_number)
 
         return photo_paths, temp_dir
 
